@@ -32,7 +32,7 @@
 
 1.  **克隆仓库**:
     ```bash
-    git clone [https://github.com/2817199948-byte/bangumi-anime-dashboard.git](https://github.com/2817199948-byte/bangumi-anime-dashboard.git)
+    git clone [https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git](https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git)
     cd bangumi-anime-dashboard
     ```
 
