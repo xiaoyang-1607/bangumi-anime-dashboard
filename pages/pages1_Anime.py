@@ -167,16 +167,15 @@ st.subheader(f"✨ 筛选结果 ({len(df_sorted)} 部动画)")
 
 # 在展示前，创建一个用于显示的副本并格式化日期
 df_display = df_sorted.copy()
-df_display.insert(0, '序号', range(1, len(df_display) + 1))
 df_display['开播日期'] = df_display['开播日期'].dt.strftime('%Y-%m-%d')
 
 st.caption(f"数据更新时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.dataframe(
-    df_display[['序号','Bangumi排名', '中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi链接']],  
+    df_display[['Bangumi排名', '中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi链接']],  
     width='stretch',
     column_config={
-        "序号": st.column_config.NumberColumn("序号", width="small"),
+       "row_numbers": st.column_config.NumberColumn("序号", width="small"),
         "Bangumi链接": st.column_config.LinkColumn(
             "Bangumi 链接",
             help="点击可查看 Bangumi 页面",
@@ -188,4 +187,5 @@ st.dataframe(
     },
     hide_index=True
 )
+
 
