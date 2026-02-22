@@ -113,7 +113,6 @@ def _fetch_and_display(subject_type: int, date_col: str):
             }
         )
         df["链接"] = "https://bgm.tv/subject/" + df["id"].astype(str)
-        df["排名"] = df["排名"].apply(lambda x: "未上榜" if isinstance(x, (int, float)) and x >= 999999 else x)
         st.dataframe(
             df[["排名", "中文名", "原名", date_col, "评分", "评分人数", "链接"]],
             column_config={

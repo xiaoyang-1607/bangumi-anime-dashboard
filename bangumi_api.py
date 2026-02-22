@@ -154,9 +154,8 @@ def fetch_ranking_with_filters(
             raise RuntimeError(f"API 请求失败: {e}") from e
 
         items = data.get("data", [])
-        allow_unranked = use_search  # Search API 常返回未上榜条目
         for s in items:
-            row = subject_to_row(s, allow_unranked=allow_unranked)
+            row = subject_to_row(s, allow_unranked=False)
             if row:
                 if rating_count_min and row.get("score_total", 0) < rating_count_min:
                     continue
