@@ -1,104 +1,74 @@
-# 📺🎮 Bangumi 综合数据分析平台
+# Bangumi 综合数据分析平台
 
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://bangumi-anime-dashboard-wvdgaakdmuyfd7s9v4ujj3.streamlit.app/)
 
-> 基于 Bangumi 归档数据，使用 Streamlit 构建的交互式分析面板，用于展示和筛选动画和游戏作品排名及评分数据。
+基于 Bangumi 数据，使用 Streamlit 构建的交互式分析面板，支持**归档 xlsx** 与 **API 实时排行**两种模式。
 
 ---
 
-## ✨ 核心特性
+## 数据模式
 
-本项目已升级为**多页应用 (Multi-page App)** 架构，包含两个完全独立的分析模块，并通过左侧导航栏进行切换。
-
-### 1. 📺 Anime (动画榜单)
-专注于日本动画作品，提供按季度、年份、评分和评分人数的精细化筛选。
-
-### 2. 🎮 Game (游戏榜单)
-专注于游戏作品，提供按**发行日期**、评分和评分人数的筛选与排名查询。
-
-### 通用功能
-
-* **名称搜索**: 支持按作品的**中文名**或**日文原名**进行模糊搜索。
-* **精确日期筛选**: 可按 **年份** 和 **月份** 精确选择作品的开播/发行时间范围。
-* **热度筛选**: 通过数字输入框设定作品的**最少评分人数**，过滤掉冷门作品。
-* **统一链接**: 表格中的每一项都包含一个独立的 **Bangumi 链接**，方便用户快速查看作品详情。
+| 模式 | 说明 | 数据来源 |
+|------|------|----------|
+| **归档模式** | 动画/游戏榜单，支持筛选、搜索 | 上传 `anime_cleaned.xlsx` / `game_cleaned.xlsx`（由 `get_source.py` 从归档生成） |
+| **API 模式** | 在线排行，类似 Bangumi 主站 | [Bangumi API](https://bangumi.github.io/api/) 实时获取，无需上传文件 |
 
 ---
 
-## 🌐 在线使用
+## 功能概览
 
-您可以直接通过以下链接访问和使用部署好的综合分析平台：
+### 归档模式（Anime / Game 页面）
+* 名称搜索（中文 / 原名）
+* 日期、评分、评分人数筛选
+* 多维度排序
+* 需先运行 `get_source.py` 生成 xlsx，或直接在页面中上传
 
-[**👉 前往 Bangumi 综合数据分析平台**](https://bangumi-anime-dashboard-wvdgaakdmuyfd7s9v4ujj3.streamlit.app/)
-
-### 使用说明
-
-1. 访问应用后，首先看到的是**欢迎页**。
-2. 使用左侧的 **导航栏** 选择您想要查看的榜单（`Anime` 或 `Game`）。
-3. 在左侧的 **筛选器 (Sidebar)** 中调整参数。
-
----
-
-## ⚙️ 项目架构与文件
-
-本项目采用 Streamlit 的多页应用结构，核心功能代码都位于 `pages/` 文件夹内。
-
-| 文件/目录 | 作用描述 |
-| :--- | :--- |
-| **`app.py`** | **应用入口**：轻量级导航页，引导用户选择榜单。 |
-| **`pages/`** | **多页代码目录**：核心功能页面存储地。 |
-| ├── `pages1_Anime.py` | 动画榜单模块的代码和筛选逻辑。 |
-| └── `pages2_Game.py` | 游戏榜单模块的代码和筛选逻辑。 |
-| **`config.py`** | 统一配置模块，支持环境变量覆盖数据路径。 |
-| **`get_source.py`** | 从 Bangumi 归档 JSONL 提取并导出 Excel。 |
-| **`get_source_api.py`** | 从 [Bangumi API](https://bangumi.github.io/api/) 获取实时数据并导出 Excel。 |
-| **`bangumi_api.py`** | Bangumi API 客户端封装。 |
-| **`best.py`** | 月度最佳作品统计脚本。 |
-| **`anime_cleaned.xlsx`** | 动画数据源（清洗后的 Excel 文件）。 |
-| **`game_cleaned.xlsx`** | 游戏数据源（清洗后的 Excel 文件）。 |
-
-## 📊 数据信息
-
-* **数据来源**: 支持两种方式
-  - **归档数据库**: 使用 `get_source.py` 从 Bangumi 归档 JSONL 提取（数据较全、无网络依赖）
-  - **实时 API**: 使用 `get_source_api.py` 从 [Bangumi API](https://bangumi.github.io/api/) 获取（实时、需网络，全量请求耗时较长）
-* **数据格式**: 应用使用 `.xlsx` 文件格式进行数据加载和处理。
-* **数据更新频率**: 归档方式每周更新；API 方式可按需随时运行。
+### API 模式（API 实时排行页面）
+* 动画 / 游戏排行榜
+* 实时从 Bangumi API 拉取
+* 无需本地数据文件
 
 ---
 
-## 🛠️ 本地运行（针对开发者）
+## 本地运行
 
-如果您想在本地运行或进一步开发此应用，请遵循以下步骤：
+```bash
+git clone https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git
+cd bangumi-anime-dashboard
+pip install -r requirements.txt
+streamlit run app.py
+```
 
-1. **克隆仓库**:
-    ```bash
-    git clone https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git
-    cd bangumi-anime-dashboard
-    ```
+### 归档模式：准备 xlsx
 
-2. **安装依赖**:
-    ```bash
-    pip install -r requirements.txt
-    ```
+1. 下载 [Bangumi 归档](https://bangumi.github.io/dumps/) 中的 `subject.jsonlines`
+2. 设置环境变量（可选）：`BANGUMI_DUMP_DIR` 指向归档目录
+3. 运行：`python get_source.py`
+4. 将生成的 `bangumi_anime_data.xlsx`、`bangumi_game_data.xlsx` 清洗后，在应用中上传或放入项目根目录
 
-3. **准备数据**:
-    将数据文件 `anime_cleaned.xlsx` 和 `game_cleaned.xlsx` 放入项目根目录。
+---
 
-4. **（可选）配置数据路径**:
-    数据脚本 (`get_source.py`、`best.py`、`test_data.py`) 支持环境变量：
-    - `BANGUMI_DUMP_DIR`: Bangumi 归档目录（含 `subject.jsonlines`），默认为 `./data`
-    - `BANGUMI_APP_DATA_DIR`: Streamlit 数据目录，默认为项目根目录
+## 项目结构
 
-5. **（可选）使用 API 获取实时数据**:
-    ```bash
-    python get_source_api.py
-    ```
-    可选环境变量：`BANGUMI_ACCESS_TOKEN`、`BANGUMI_API_MAX_ITEMS`（测试时限制条数）
+| 文件 | 说明 |
+|------|------|
+| `app.py` | 应用入口 |
+| `pages/` | 多页模块 |
+| ├── `pages1_Anime.py` | 动画榜单（归档 xlsx） |
+| ├── `pages2_Game.py` | 游戏榜单（归档 xlsx） |
+| └── `pages3_API_Ranking.py` | API 实时排行 |
+| `get_source.py` | 从归档 JSONL 导出 xlsx |
+| `bangumi_api.py` | Bangumi API 客户端 |
+| `config.py` | 配置（环境变量） |
+| `best.py` | 月度最佳统计脚本 |
 
-6. **运行应用**:
-    ```bash
-    streamlit run app.py
-    ```
+---
 
-应用将自动在您的浏览器中打开 (`http://localhost:8501`)。
+## 环境变量
+
+| 变量 | 说明 |
+|------|------|
+| `BANGUMI_DUMP_DIR` | 归档目录（含 subject.jsonlines），默认 `./data` |
+| `BANGUMI_APP_DATA_DIR` | xlsx 数据目录，默认项目根目录 |
+| `BANGUMI_ACCESS_TOKEN` | （可选）API Access Token |
+| `BANGUMI_USER_AGENT` | （可选）API 请求 User-Agent |

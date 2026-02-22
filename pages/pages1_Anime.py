@@ -1,196 +1,155 @@
+"""
+动画榜单 - 基于归档导出的 xlsx 数据
+
+使用 get_source.py 从 Bangumi 归档生成 xlsx 后，上传或放入项目根目录。
+"""
 import sys
 from pathlib import Path
 
-# 确保项目根目录在 Python 路径中
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
+import io
 import pandas as pd
 import streamlit as st
 
 from config import BANGUMI_APP_DATA_DIR, ANIME_CLEANED_FILE
 
-# --- 配置 ---
 st.set_page_config(
-    page_title="Bangumi 动画排名数据分析",
+    page_title="Bangumi 动画榜单",
     layout="wide",
-    initial_sidebar_state="expanded"
+    initial_sidebar_state="expanded",
 )
 
-DATA_FILE_PATH = str(BANGUMI_APP_DATA_DIR / ANIME_CLEANED_FILE)
+DEFAULT_PATH = BANGUMI_APP_DATA_DIR / ANIME_CLEANED_FILE
 
-# --- 1. 数据加载与清洗 ---
-@st.cache_data
-def load_and_clean_data(file_path):
-    # 此函数返回带有 datetime 对象的 DataFrame，用于准确的筛选和排序
-    df = pd.DataFrame()
-    csv_path = str(Path(file_path).with_suffix('.csv'))
 
-    # 尝试加载文件
-    try:
-        df = pd.read_excel(file_path, engine='openpyxl')
-    except FileNotFoundError:
-        try:
-            df = pd.read_csv(csv_path)
-        except FileNotFoundError:
-            st.error(f"找不到数据文件。请确保 '{ANIME_CLEANED_FILE}' 或对应的 CSV 文件存在。")
-            st.stop()
-        except Exception as e:
-            st.error(f"加载 CSV 文件时发生错误: {e}")
-            st.stop()
-    except Exception as e:
-        st.error(f"加载 XLSX 文件时发生错误: {e}")
-        st.stop()
-
+def load_from_dataframe(df: pd.DataFrame) -> pd.DataFrame:
+    """将原始 DataFrame 清洗为展示格式。"""
     if df.empty:
-        st.error("数据加载失败，无法继续处理。")
+        return df
+    df = df.copy()
+    df["name_cn"] = df.get("name_cn", df.get("name", "")).fillna(df.get("name", ""))
+    df["date"] = pd.to_datetime(df.get("date"), errors="coerce")
+    df["score"] = pd.to_numeric(df.get("score"), errors="coerce")
+    df["score_total"] = pd.to_numeric(df.get("score_total"), errors="coerce")
+    df["rank"] = pd.to_numeric(df.get("rank"), errors="coerce")
+    df.dropna(subset=["date"], inplace=True)
+    id_col = "id" if "id" in df.columns else "ID"
+    df["Bangumi链接"] = "https://bgm.tv/subject/" + df[id_col].astype(str)
+    df = df.rename(
+        columns={
+            "name_cn": "中文名",
+            "name": "原名",
+            "date": "开播日期",
+            "score": "评分",
+            "score_total": "评分人数",
+            "rank": "Bangumi排名",
+        }
+    )
+    return df[["中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi排名", "Bangumi链接"]]
+
+
+@st.cache_data
+def load_from_path(file_path: str) -> pd.DataFrame:
+    """从文件路径加载。"""
+    df = pd.read_excel(file_path, engine="openpyxl")
+    return load_from_dataframe(df)
+
+
+st.title("Bangumi 动画榜单")
+st.caption("数据来自归档导出的 xlsx。需先运行 get_source.py 生成，或从下方上传。")
+
+# 数据源：本地文件 / 上传
+df_original = None
+if DEFAULT_PATH.exists():
+    try:
+        df_original = load_from_path(str(DEFAULT_PATH))
+    except Exception as e:
+        st.warning(f"读取本地文件失败: {e}")
+
+if df_original is None or df_original.empty:
+    uploaded = st.file_uploader(
+        "上传 anime_cleaned.xlsx",
+        type=["xlsx", "xls"],
+        help="由 get_source.py 从归档生成后导出",
+    )
+    if uploaded:
+        try:
+            df_original = load_from_dataframe(pd.read_excel(uploaded, engine="openpyxl"))
+        except Exception as e:
+            st.error(f"解析失败: {e}")
+    else:
+        st.info("请上传 xlsx 文件，或使用左侧「API 实时排行」查看在线数据。")
         st.stop()
 
-    # 填充中文名为空的项，确保关键列为正确类型
-    df['name_cn'] = df['name_cn'].fillna(df['name'])
-    df['date'] = pd.to_datetime(df['date'], errors='coerce')  # 保持为 datetime 类型
-    df['score'] = pd.to_numeric(df['score'], errors='coerce')
-    df['score_total'] = pd.to_numeric(df['score_total'], errors='coerce')
-    df['rank'] = pd.to_numeric(df['rank'], errors='coerce')
+df_filtered = df_original.copy()
 
-    # 移除日期无效的行
-    df.dropna(subset=['date'], inplace=True)
-
-    df['Bangumi链接'] = 'https://bgm.tv/subject/' + df['id'].astype(str)
-
-    # 重命名列
-    df = df.rename(columns={
-        'name_cn': '中文名', 'name': '原名', 'date': '开播日期',
-        'score': '评分', 'score_total': '评分人数', 'rank': 'Bangumi排名'
-    })
-
-    display_cols = ['中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi排名', 'Bangumi链接']
-    return df[display_cols]
-
-
-# --- 2. 应用主逻辑 ---
-st.title("📺 Bangumi 动画排名数据分析")
-
-# 加载原始数据 (包含 datetime 对象)
-df_original = load_and_clean_data(DATA_FILE_PATH)
-df_filtered = df_original.copy()  # 用于筛选操作
-
-# --- 3. 侧边栏筛选器 ---
-st.sidebar.header("⚙️ 数据筛选与排序")
-
+# 侧边栏
+st.sidebar.header("筛选与排序")
 search_term = st.sidebar.text_input("按名称搜索 (中文/原名)", value="")
-
 if search_term:
-    search_term_lower = search_term.lower()
+    s = search_term.lower()
     df_filtered = df_filtered[
-        df_filtered['中文名'].str.lower().str.contains(search_term_lower, na=False) |
-        df_filtered['原名'].str.lower().str.contains(search_term_lower, na=False)
-        ]
-
-st.sidebar.subheader("📅 日期范围筛选")
-
-# 1. 获取所有可选的年份和月份
-min_year = int(df_original['开播日期'].min().year)
-max_year = int(df_original['开播日期'].max().year)
-all_years = list(range(min_year, max_year + 1))
-all_months = list(range(1, 13))
-
-# 2. 起始日期选择
-st.sidebar.markdown("##### 起始时间")
-col1, col2 = st.sidebar.columns(2)
-with col1:
-    start_year = st.selectbox('年份', all_years, index=0, key='start_year', label_visibility='collapsed')
-with col2:
-    start_month = st.selectbox('月份', all_months, index=0, key='start_month', label_visibility='collapsed')
-
-# 3. 结束日期选择
-st.sidebar.markdown("##### 结束时间")
-col3, col4 = st.sidebar.columns(2)
-with col3:
-    # 默认值设置为最大年份
-    end_year = st.selectbox('年份', all_years, index=len(all_years) - 1, key='end_year', label_visibility='collapsed')
-with col4:
-    # 默认值设置为最大月份 (即 12 月)
-    end_month = st.selectbox('月份', all_months, index=11, key='end_month', label_visibility='collapsed')
-
-# 4. 构建日期对象并应用筛选逻辑
-try:
-    # 构造起始日期 (该月的 1 号)
-    start_date = pd.to_datetime(f"{start_year}-{start_month}-01")
-
-    # 构造结束日期 (选择月份的下一月 1 号，作为上界，确保包含选中月份的全部天数)
-    if end_month == 12:
-        end_month_next = 1
-        end_year_next = end_year + 1
-    else:
-        end_month_next = end_month + 1
-        end_year_next = end_year
-
-    end_date = pd.to_datetime(f"{end_year_next}-{end_month_next}-01")
-
-    # 逻辑检查：如果起始日期晚于等于结束日期，显示错误
-    if start_date >= end_date:
-        st.sidebar.error("起始日期不能晚于或等于结束日期！")
-        # 为了防止应用崩溃，我们使用一个空范围
-        df_filtered = df_filtered[0:0]
-    else:
-        # 应用日期筛选 (使用 < 结束日期，因为结束日期是下一月的 1 号)
-        df_filtered = df_filtered[
-            (df_filtered['开播日期'] >= start_date) &
-            (df_filtered['开播日期'] < end_date)
-            ]
-
-except ValueError:
-    st.sidebar.error("日期选择解析失败，请检查年份和月份是否有效。")
-
-# 评分筛选
-min_score = df_original['评分'].min()
-max_score = df_original['评分'].max()
-score_range = st.sidebar.slider(
-    '评分范围', float(min_score), float(max_score),
-    (float(min_score), float(max_score)), step=0.1
-)
-df_filtered = df_filtered[
-    (df_filtered['评分'] >= score_range[0]) & (df_filtered['评分'] <= score_range[1])
+        df_filtered["中文名"].str.lower().str.contains(s, na=False)
+        | df_filtered["原名"].str.lower().str.contains(s, na=False)
     ]
 
-# 人数筛选
-max_users = df_original['评分人数'].max()
-user_threshold = st.sidebar.number_input(
-    '最少评分人数 (筛选热度)', min_value=0, max_value=int(max_users), value=0
+st.sidebar.subheader("日期范围")
+min_year = int(df_original["开播日期"].min().year)
+max_year = int(df_original["开播日期"].max().year)
+all_years = list(range(min_year, max_year + 1))
+all_months = list(range(1, 13))
+c1, c2 = st.sidebar.columns(2)
+with c1:
+    start_year = st.selectbox("起始年", all_years, index=0, key="sy")
+    start_month = st.selectbox("起始月", all_months, index=0, key="sm")
+with c2:
+    end_year = st.selectbox("结束年", all_years, index=len(all_years) - 1, key="ey")
+    end_month = st.selectbox("结束月", all_months, index=11, key="em")
+
+try:
+    start_date = pd.to_datetime(f"{start_year}-{start_month}-01")
+    ny, nm = (end_year + 1, 1) if end_month == 12 else (end_year, end_month + 1)
+    end_date = pd.to_datetime(f"{ny}-{nm:02d}-01")
+    if start_date < end_date:
+        df_filtered = df_filtered[
+            (df_filtered["开播日期"] >= start_date)
+            & (df_filtered["开播日期"] < end_date)
+        ]
+    else:
+        st.sidebar.error("起始日期须早于结束日期")
+        df_filtered = df_filtered[0:0]
+except ValueError:
+    st.sidebar.error("日期无效")
+
+min_s, max_s = float(df_original["评分"].min()), float(df_original["评分"].max())
+score_range = st.sidebar.slider("评分范围", min_s, max_s, (min_s, max_s), step=0.1)
+df_filtered = df_filtered[
+    (df_filtered["评分"] >= score_range[0]) & (df_filtered["评分"] <= score_range[1])
+]
+user_min = st.sidebar.number_input(
+    "最少评分人数", 0, int(df_original["评分人数"].max()), 0
 )
-df_filtered = df_filtered[df_filtered['评分人数'] >= user_threshold]
+df_filtered = df_filtered[df_filtered["评分人数"] >= user_min]
 
-# --- 4. 排序选项 ---
-sort_by = st.sidebar.selectbox("排序依据", ('开播日期', '评分', '评分人数', 'Bangumi排名'))
-default_ascending = True if sort_by == 'Bangumi排名' else False
-sort_order = st.sidebar.radio(
-    f"{sort_by} 排序方式", ('降序', '升序'), index=0 if not default_ascending else 1
+sort_by = st.sidebar.selectbox(
+    "排序", ("开播日期", "评分", "评分人数", "Bangumi排名")
 )
-is_ascending = (sort_order == '升序')
+asc = st.sidebar.radio("排序方向", ("降序", "升序"), index=0) == "升序"
+asc = asc if sort_by != "Bangumi排名" else True
+df_sorted = df_filtered.sort_values(sort_by, ascending=asc)
 
-df_sorted = df_filtered.sort_values(by=sort_by, ascending=is_ascending)
-
-# --- 5. 结果展示 ---
-st.subheader(f"✨ 筛选结果 ({len(df_sorted)} 部动画)")
-
-# 在展示前，创建一个用于显示的副本并格式化日期
+# 展示
+st.subheader(f"筛选结果 ({len(df_sorted)} 部)")
 df_display = df_sorted.copy()
-df_display['开播日期'] = df_display['开播日期'].dt.strftime('%Y-%m-%d')
-
-st.caption(f"数据更新时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
+df_display["开播日期"] = df_display["开播日期"].dt.strftime("%Y-%m-%d")
 
 st.dataframe(
-    df_display[['Bangumi排名', '中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi链接']],
-    width='stretch',
+    df_display[["Bangumi排名", "中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi链接"]],
     column_config={
-        "Bangumi链接": st.column_config.LinkColumn(
-            "Bangumi 链接",
-            help="点击可查看 Bangumi 页面",
-            display_text="🔗 链接"
-        ),
-        'Bangumi排名': "排名",
-        '评分': st.column_config.NumberColumn("评分", format="%.1f", width="small"),
-        '评分人数': "评分人数",
+        "Bangumi链接": st.column_config.LinkColumn("链接", display_text="Bangumi"),
+        "评分": st.column_config.NumberColumn("评分", format="%.1f"),
     },
-    hide_index=True
+    hide_index=True,
+    use_container_width=True,
 )
