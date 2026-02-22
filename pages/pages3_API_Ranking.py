@@ -52,7 +52,10 @@ if use_filters:
 
     use_rc = st.sidebar.checkbox("限制最少评分人数", False, key="urc")
     if use_rc:
-        rating_count_min = st.sidebar.number_input("最少评分人数", 0, 100000, 100, 100, key="rcmin")
+        rating_count_min = st.sidebar.number_input(
+            "最少评分人数", 0, 100000, 100, 100, key="rcmin",
+            help="API 不支持此筛选，在本地过滤",
+        )
 
     st.sidebar.subheader("标签 (meta_tags)")
     tag_input = st.sidebar.text_input(

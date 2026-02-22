@@ -116,7 +116,7 @@ def fetch_ranking_with_filters(
     """
     rows = []
     offset = 0
-    use_search = air_date or rating_min is not None or rating_max is not None or rating_count_min or meta_tags
+    use_search = air_date or rating_min is not None or rating_max is not None or meta_tags
 
     rating_filters = []
     if rating_min is not None:
@@ -126,7 +126,8 @@ def fetch_ranking_with_filters(
     if not rating_filters:
         rating_filters = None
 
-    rating_count_filters = [f">={rating_count_min}"] if rating_count_min else None
+    # rating_count 会导致 Bangumi API 500 错误，改为获取后在本地筛选
+    rating_count_filters = None
 
     while len(rows) < limit:
         try:
@@ -157,6 +158,8 @@ def fetch_ranking_with_filters(
         for s in items:
             row = subject_to_row(s, allow_unranked=allow_unranked)
             if row:
+                if rating_count_min and row.get("score_total", 0) < rating_count_min:
+                    continue
                 rows.append(row)
                 if len(rows) >= limit:
                     break
@@ -164,6 +167,8 @@ def fetch_ranking_with_filters(
         if not items or len(items) < 50:
             break
         offset += 50
+        if rating_count_min and use_search and offset >= 500:
+            break
 
     return rows
 
