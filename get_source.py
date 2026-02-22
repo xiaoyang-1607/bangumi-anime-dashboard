@@ -37,7 +37,7 @@ def process_subject_data(jsonl_path):
     skipped_count = 0
 
     try:
-        with open(jsonl_path, 'r', encoding='utf-8') as f:
+        with open(jsonl_path, 'r', encoding='utf-8-sig') as f:
             for line_num, line in enumerate(f, 1):
                 try:
                     subject = json.loads(line)
@@ -117,10 +117,10 @@ def export_to_excel(data_list, output_path, sheet_name):
         output_path.parent.mkdir(parents=True, exist_ok=True)
         # Export as is for now; date formatting will happen in the next step
         df.to_excel(output_path, index=False, sheet_name=sheet_name, engine='xlsxwriter')
-        print(f"✓ 成功导出文件: {output_path.name}")
+        print(f"[OK] 成功导出文件: {output_path.name}")
         return True
     except Exception as e:
-        print(f"✗ 导出数据到 Excel 错误: {e}")
+        print(f"[ERROR] 导出数据到 Excel 错误: {e}")
         return False
 
 
@@ -161,10 +161,10 @@ def apply_excel_date_format(file_path: Path, column_name: str, date_format: str)
         # This operation overwrites the original file
         writer.close()
 
-        print(f"✓ 文件 {file_base_name} 中的 '{column_name}' 列已成功转换为日期格式 ({date_format}) 并保存。")
+        print(f"[OK] 文件 {file_base_name} 中的 '{column_name}' 列已成功转换为日期格式 ({date_format}) 并保存。")
 
     except Exception as e:
-        print(f"✗ 修复文件 {file_base_name} 的日期格式时发生错误: {e}")
+        print(f"[ERROR] 修复文件 {file_base_name} 的日期格式时发生错误: {e}")
 
 
 def main():
@@ -192,7 +192,7 @@ def main():
         apply_excel_date_format(GAME_OUTPUT_FILE, DATE_COLUMN_NAME, EXCEL_DATE_FORMAT)
 
     print("\n=====================================")
-    print("✅ 所有提取、导出和格式化操作已完成。")
+    print("[OK] 所有提取、导出和格式化操作已完成。")
     print(f"动画数据文件: {ANIME_OUTPUT_FILE}")
     print(f"游戏数据文件: {GAME_OUTPUT_FILE}")
     print("=====================================")

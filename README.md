@@ -51,15 +51,19 @@
 | └── `pages2_Game.py` | 游戏榜单模块的代码和筛选逻辑。 |
 | **`config.py`** | 统一配置模块，支持环境变量覆盖数据路径。 |
 | **`get_source.py`** | 从 Bangumi 归档 JSONL 提取并导出 Excel。 |
+| **`get_source_api.py`** | 从 [Bangumi API](https://bangumi.github.io/api/) 获取实时数据并导出 Excel。 |
+| **`bangumi_api.py`** | Bangumi API 客户端封装。 |
 | **`best.py`** | 月度最佳作品统计脚本。 |
 | **`anime_cleaned.xlsx`** | 动画数据源（清洗后的 Excel 文件）。 |
 | **`game_cleaned.xlsx`** | 游戏数据源（清洗后的 Excel 文件）。 |
 
 ## 📊 数据信息
 
-* **数据来源**: 原始数据来源于 Bangumi 归档数据库。
+* **数据来源**: 支持两种方式
+  - **归档数据库**: 使用 `get_source.py` 从 Bangumi 归档 JSONL 提取（数据较全、无网络依赖）
+  - **实时 API**: 使用 `get_source_api.py` 从 [Bangumi API](https://bangumi.github.io/api/) 获取（实时、需网络，全量请求耗时较长）
 * **数据格式**: 应用使用 `.xlsx` 文件格式进行数据加载和处理。
-* **数据更新频率**: 一般情况下，数据会**每周更新一次**，以确保排名的时效性。
+* **数据更新频率**: 归档方式每周更新；API 方式可按需随时运行。
 
 ---
 
@@ -86,7 +90,13 @@
     - `BANGUMI_DUMP_DIR`: Bangumi 归档目录（含 `subject.jsonlines`），默认为 `./data`
     - `BANGUMI_APP_DATA_DIR`: Streamlit 数据目录，默认为项目根目录
 
-5. **运行应用**:
+5. **（可选）使用 API 获取实时数据**:
+    ```bash
+    python get_source_api.py
+    ```
+    可选环境变量：`BANGUMI_ACCESS_TOKEN`、`BANGUMI_API_MAX_ITEMS`（测试时限制条数）
+
+6. **运行应用**:
     ```bash
     streamlit run app.py
     ```
