@@ -26,7 +26,15 @@ st.set_page_config(
 st.title("Bangumi API 实时排行")
 st.caption("数据来自 Bangumi API，筛选条件在请求前生效，减少数据量。")
 
-# 侧边栏：筛选条件（先筛选后获取）
+# 侧边栏
+st.sidebar.header("API 配置")
+access_token = st.sidebar.text_input(
+    "Access Token（可选）",
+    type="password",
+    placeholder="粘贴 Token 可提高限流额度",
+    help="在 https://next.bgm.tv/demo/access-token 生成",
+)
+
 st.sidebar.header("筛选条件")
 limit = st.sidebar.slider("显示条数", 20, 200, 100)
 
@@ -66,11 +74,31 @@ if use_filters:
     if tag_input:
         meta_tags_list = [t.strip() for t in tag_input.split(",") if t.strip()]
 
+    only_ranked = st.sidebar.checkbox(
+        "仅显示有排名",
+        value=True,
+        key="only_ranked",
+        help="取消勾选可显示未上榜作品（筛选时 Search API 多返回未上榜）",
+    )
+else:
+    only_ranked = True
+
 
 @st.cache_data(ttl=1800)
-def _cached_fetch(subject_type: int, limit: int, air_date_tuple, rating_min, rating_max, rating_count_min, meta_tags_tuple):
+def _cached_fetch(
+    subject_type: int,
+    limit: int,
+    air_date_tuple,
+    rating_min,
+    rating_max,
+    rating_count_min,
+    meta_tags_tuple,
+    access_token: str,
+    allow_unranked: bool,
+):
     air_date = list(air_date_tuple) if air_date_tuple else None
     meta_tags = list(meta_tags_tuple) if meta_tags_tuple else None
+    token = access_token.strip() or None
     return fetch_ranking_with_filters(
         subject_type=subject_type,
         limit=limit,
@@ -79,12 +107,16 @@ def _cached_fetch(subject_type: int, limit: int, air_date_tuple, rating_min, rat
         rating_max=rating_max,
         rating_count_min=rating_count_min,
         meta_tags=meta_tags,
+        access_token=token,
+        allow_unranked=allow_unranked,
     )
 
 
 def _fetch_and_display(subject_type: int, date_col: str):
     ad = tuple(air_date_filters) if air_date_filters else ()
     mt = tuple(meta_tags_list) if meta_tags_list else ()
+    # 启用筛选时 Search API 多返回未上榜，需 allow_unranked 才能拿到数据；仅显示有排名则在本地过滤
+    allow_unranked = use_filters
     try:
         rows = _cached_fetch(
             subject_type,
@@ -94,6 +126,8 @@ def _fetch_and_display(subject_type: int, date_col: str):
             rating_max,
             rating_count_min,
             mt,
+            access_token or "",
+            allow_unranked,
         )
     except Exception as e:
         st.error(f"API 请求失败: {e}")
@@ -101,6 +135,8 @@ def _fetch_and_display(subject_type: int, date_col: str):
 
     if rows:
         df = pd.DataFrame(rows)
+        if only_ranked and use_filters:
+            df = df[df["rank"] < 999999]
         df = df.sort_values("rank")
         df = df.rename(
             columns={
@@ -123,7 +159,10 @@ def _fetch_and_display(subject_type: int, date_col: str):
             use_container_width=True,
         )
     else:
-        st.info("暂无符合条件的数据。")
+        if use_filters and only_ranked:
+            st.info("当前筛选条件下暂无有排名的作品，可取消勾选「仅显示有排名」以显示未上榜作品。")
+        else:
+            st.info("暂无符合条件的数据。")
 
 tab_anime, tab_game = st.tabs(["动画排行", "游戏排行"])
 

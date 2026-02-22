@@ -19,9 +19,9 @@ TYPE_ANIME = 2
 TYPE_GAME = 4
 
 
-def _get_headers() -> dict:
+def _get_headers(access_token: Optional[str] = None) -> dict:
     headers = {"User-Agent": os.environ.get("BANGUMI_USER_AGENT", DEFAULT_USER_AGENT)}
-    token = os.environ.get("BANGUMI_ACCESS_TOKEN")
+    token = access_token or os.environ.get("BANGUMI_ACCESS_TOKEN")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     return headers
@@ -34,6 +34,7 @@ def get_subjects(
     month: Optional[int] = None,
     limit: int = DEFAULT_LIMIT,
     offset: int = 0,
+    access_token: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     浏览条目 GET /v0/subjects
@@ -49,7 +50,7 @@ def get_subjects(
     resp = requests.get(
         f"{API_BASE}/v0/subjects",
         params=params,
-        headers=_get_headers(),
+        headers=_get_headers(access_token),
         timeout=30,
     )
     resp.raise_for_status()
@@ -67,6 +68,7 @@ def search_subjects(
     rating_count: Optional[list[str]] = None,
     meta_tags: Optional[list[str]] = None,
     rank_filter: Optional[list[str]] = None,
+    access_token: Optional[str] = None,
 ) -> dict[str, Any]:
     """
     条目搜索 POST /v0/search/subjects，先筛选后获取。
@@ -94,7 +96,7 @@ def search_subjects(
         f"{API_BASE}/v0/search/subjects",
         json=body,
         params={"limit": limit, "offset": offset},
-        headers={**_get_headers(), "Content-Type": "application/json"},
+        headers={**_get_headers(access_token), "Content-Type": "application/json"},
         timeout=30,
     )
     resp.raise_for_status()
@@ -109,6 +111,8 @@ def fetch_ranking_with_filters(
     rating_max: Optional[float] = None,
     rating_count_min: Optional[int] = None,
     meta_tags: Optional[list[str]] = None,
+    access_token: Optional[str] = None,
+    allow_unranked: bool = False,
 ) -> list[dict]:
     """
     带筛选的排行获取：有筛选时用 search API，无筛选时用 get_subjects。
@@ -142,6 +146,7 @@ def fetch_ranking_with_filters(
                     rating=rating_filters,
                     rating_count=rating_count_filters,
                     meta_tags=meta_tags,
+                    access_token=access_token,
                 )
             else:
                 data = get_subjects(
@@ -149,13 +154,14 @@ def fetch_ranking_with_filters(
                     sort="rank",
                     limit=min(50, limit - len(rows)),
                     offset=offset,
+                    access_token=access_token,
                 )
         except requests.RequestException as e:
             raise RuntimeError(f"API 请求失败: {e}") from e
 
         items = data.get("data", [])
         for s in items:
-            row = subject_to_row(s, allow_unranked=False)
+            row = subject_to_row(s, allow_unranked=allow_unranked)
             if row:
                 if rating_count_min and row.get("score_total", 0) < rating_count_min:
                     continue
