@@ -41,8 +41,10 @@ streamlit run app.py
 
 ### 归档模式：准备 xlsx
 
-1. 下载 [Bangumi 归档](https://bangumi.github.io/dumps/) 中的 `subject.jsonlines`
-2. 设置环境变量（可选）：`BANGUMI_DUMP_DIR` 指向归档目录
+1. 从 [Bangumi Archive](https://github.com/bangumi/Archive) 获取归档数据：
+   - 最新归档地址见 [aux/latest.json](https://raw.githubusercontent.com/bangumi/Archive/master/aux/latest.json)
+   - 在 [Releases](https://github.com/bangumi/Archive/releases) 下载 `dump-*.zip`，解压得到 `subject.jsonlines`
+2. 设置环境变量（可选）：`BANGUMI_DUMP_DIR` 指向归档解压目录
 3. 运行：`python get_source.py`
 4. 将生成的 `bangumi_anime_data.xlsx`、`bangumi_game_data.xlsx` 清洗后，在应用中上传或放入项目根目录
 

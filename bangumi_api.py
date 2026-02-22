@@ -153,8 +153,9 @@ def fetch_ranking_with_filters(
             raise RuntimeError(f"API 请求失败: {e}") from e
 
         items = data.get("data", [])
+        allow_unranked = use_search  # Search API 常返回未上榜条目
         for s in items:
-            row = subject_to_row(s)
+            row = subject_to_row(s, allow_unranked=allow_unranked)
             if row:
                 rows.append(row)
                 if len(rows) >= limit:
@@ -202,19 +203,24 @@ def iter_all_subjects(
         time.sleep(delay)
 
 
-def subject_to_row(subject: dict) -> Optional[dict]:
+def subject_to_row(subject: dict, allow_unranked: bool = False) -> Optional[dict]:
     """
     将 API Subject 转为与 get_source.py 一致的字段格式。
     API 中 rank 在 rating 内，日期字段为 date 或 air_date。
+    allow_unranked: 为 True 时接受 rank=0 的条目（Search API 常返回未上榜条目）。
     """
     rating = subject.get("rating") or {}
     rank = rating.get("rank") or subject.get("rank")
-    if rank == 0 or rank is None:
+    if not allow_unranked and (rank == 0 or rank is None):
         return None
+    if rank is None or rank == 0:
+        rank = 999999  # 未上榜，排末尾显示
 
     air_date = subject.get("date") or subject.get("air_date")
     if not air_date:
-        return None
+        if not allow_unranked:
+            return None
+        air_date = ""
 
     score = rating.get("score")
     total = rating.get("total")
@@ -232,5 +238,5 @@ def subject_to_row(subject: dict) -> Optional[dict]:
         "meta_tags": "",
         "score": score,
         "score_total": total or 0,
-        "rank": rank,
+        "rank": rank if isinstance(rank, int) else 999999,
     }
