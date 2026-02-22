@@ -1,5 +1,13 @@
-import streamlit as st
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 Python 路径中
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
+import streamlit as st
+
+from config import BANGUMI_APP_DATA_DIR, GAME_CLEANED_FILE
 
 # --- 配置 ---
 st.set_page_config(
@@ -7,19 +15,17 @@ st.set_page_config(
     layout="wide",
 )
 
-DATA_FILE_NAME = 'game_cleaned.xlsx'  # <--- 已修改为 XLSX
-
+DATA_FILE_PATH = str(BANGUMI_APP_DATA_DIR / GAME_CLEANED_FILE)
 
 # --- 1. 数据加载与清洗 (需适应游戏数据) ---
 @st.cache_data
 def load_and_clean_data(file_path):
     df = pd.DataFrame()
 
-    # 尝试加载 XLSX 文件
     try:
         df = pd.read_excel(file_path, engine='openpyxl')
     except FileNotFoundError:
-        st.error(f"找不到数据文件。请确保 '{DATA_FILE_NAME}' 文件存在。")
+        st.error(f"找不到数据文件。请确保 '{GAME_CLEANED_FILE}' 文件存在。")
         st.stop()
     except Exception as e:
         st.error(f"加载 XLSX 文件时发生错误: {e}")
@@ -29,6 +35,7 @@ def load_and_clean_data(file_path):
         st.error("数据加载失败，无法继续处理。")
         st.stop()
 
+    # 兼容不同列名的 Excel 格式
     rename_dict = {
         'id': 'ID',
         'name': '原名',
@@ -43,23 +50,18 @@ def load_and_clean_data(file_path):
     if '中文名' in df.columns:
         df['中文名'] = df['中文名'].fillna('')
 
-    # 将日期字符串转换为 datetime 对象
     try:
         df['发行日期'] = pd.to_datetime(df['发行日期'], errors='coerce')
-        df = df.dropna(subset=['发行日期'])  # 清除无效日期
+        df = df.dropna(subset=['发行日期'])
     except Exception as e:
         st.error(f"日期转换错误: {e}")
         st.stop()
 
-    # 确保关键列为正确类型
     df['评分'] = pd.to_numeric(df['评分'], errors='coerce')
     df['评分人数'] = pd.to_numeric(df['评分人数'], errors='coerce')
     df['Bangumi排名'] = pd.to_numeric(df['Bangumi排名'], errors='coerce')
-
-    # 创建完整的 Bangumi 链接列
     df['Bangumi链接'] = 'https://bgm.tv/subject/' + df['ID'].astype(str)
 
-    # 最终只选取展示需要的列（这会自动过滤掉 meta_tags 等多余列）
     display_cols = ['中文名', '原名', '发行日期', '评分', '评分人数', 'Bangumi排名', 'Bangumi链接']
     return df[display_cols]
 
@@ -67,14 +69,12 @@ def load_and_clean_data(file_path):
 # --- 2. 应用主逻辑 ---
 st.title("🎮 Bangumi 游戏榜单分析")
 
-# 加载原始数据 (包含 datetime 对象)
-df_original = load_and_clean_data(DATA_FILE_NAME)
+df_original = load_and_clean_data(DATA_FILE_PATH)
 df_filtered = df_original.copy()
 
 # --- 3. 侧边栏筛选器 ---
 st.sidebar.header("⚙️ 数据筛选与排序")
 
-# 名称搜索
 search_term = st.sidebar.text_input('按名称搜索 (中文/原名)', value='').strip()
 if search_term:
     search_term_lower = search_term.lower()
@@ -83,7 +83,6 @@ if search_term:
         df_filtered['原名'].str.lower().str.contains(search_term_lower, na=False)
         ]
 
-# 日期范围筛选 (使用发行日期)
 st.sidebar.subheader("📅 日期范围筛选")
 unique_years = sorted(df_original['发行日期'].dt.year.dropna().astype(int).unique())
 
@@ -165,13 +164,12 @@ if len(df_sorted) > 0:
     st.dataframe(
         df_display[['Bangumi排名', '中文名', '原名', '发行日期', '评分', '评分人数', 'Bangumi链接']],
         column_config={
-           "row_numbers": st.column_config.NumberColumn("序号", width="small"),
             "Bangumi链接": st.column_config.LinkColumn(
                 "Bangumi 链接",
                 help="点击可查看 Bangumi 页面",
-                display_text="🔗 链接"  # 显示为简短的图标或文字
+                display_text="🔗 链接"
             ),
-            'Bangumi排名': "排名",  # 恢复为普通列名
+            'Bangumi排名': "排名",
             '评分': st.column_config.NumberColumn("评分", format="%.1f", width="small"),
             '评分人数': "评分人数",
         },
@@ -182,6 +180,3 @@ else:
     st.info("没有找到符合筛选条件的结果。")
 
 st.caption("数据来源：Bangumi 归档数据库")
-
-
-

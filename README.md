@@ -33,9 +33,9 @@
 
 ### 使用说明
 
-1.  访问应用后，首先看到的是**欢迎页**。
-2.  使用左侧的 **导航栏** 选择您想要查看的榜单（`Anime` 或 `Game`）。
-3.  在左侧的 **筛选器 (Sidebar)** 中调整参数。
+1. 访问应用后，首先看到的是**欢迎页**。
+2. 使用左侧的 **导航栏** 选择您想要查看的榜单（`Anime` 或 `Game`）。
+3. 在左侧的 **筛选器 (Sidebar)** 中调整参数。
 
 ---
 
@@ -47,8 +47,11 @@
 | :--- | :--- |
 | **`app.py`** | **应用入口**：轻量级导航页，引导用户选择榜单。 |
 | **`pages/`** | **多页代码目录**：核心功能页面存储地。 |
-| ├── `1_Anime.py` | 动画榜单模块的代码和筛选逻辑。 |
-| └── `2_Game.py` | 游戏榜单模块的代码和筛选逻辑。 |
+| ├── `pages1_Anime.py` | 动画榜单模块的代码和筛选逻辑。 |
+| └── `pages2_Game.py` | 游戏榜单模块的代码和筛选逻辑。 |
+| **`config.py`** | 统一配置模块，支持环境变量覆盖数据路径。 |
+| **`get_source.py`** | 从 Bangumi 归档 JSONL 提取并导出 Excel。 |
+| **`best.py`** | 月度最佳作品统计脚本。 |
 | **`anime_cleaned.xlsx`** | 动画数据源（清洗后的 Excel 文件）。 |
 | **`game_cleaned.xlsx`** | 游戏数据源（清洗后的 Excel 文件）。 |
 
@@ -64,22 +67,26 @@
 
 如果您想在本地运行或进一步开发此应用，请遵循以下步骤：
 
-1.  **克隆仓库**:
+1. **克隆仓库**:
     ```bash
-    git clone [https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git](https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git)
+    git clone https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git
     cd bangumi-anime-dashboard
     ```
 
-2.  **安装依赖**:
+2. **安装依赖**:
     ```bash
     pip install -r requirements.txt
-    pip install openpyxl 
     ```
 
-3.  **准备数据**:
+3. **准备数据**:
     将数据文件 `anime_cleaned.xlsx` 和 `game_cleaned.xlsx` 放入项目根目录。
 
-4.  **运行应用**:
+4. **（可选）配置数据路径**:
+    数据脚本 (`get_source.py`、`best.py`、`test_data.py`) 支持环境变量：
+    - `BANGUMI_DUMP_DIR`: Bangumi 归档目录（含 `subject.jsonlines`），默认为 `./data`
+    - `BANGUMI_APP_DATA_DIR`: Streamlit 数据目录，默认为项目根目录
+
+5. **运行应用**:
     ```bash
     streamlit run app.py
     ```

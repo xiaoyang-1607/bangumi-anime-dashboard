@@ -1,5 +1,13 @@
-import streamlit as st
+import sys
+from pathlib import Path
+
+# 确保项目根目录在 Python 路径中
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+
 import pandas as pd
+import streamlit as st
+
+from config import BANGUMI_APP_DATA_DIR, ANIME_CLEANED_FILE
 
 # --- 配置 ---
 st.set_page_config(
@@ -8,14 +16,14 @@ st.set_page_config(
     initial_sidebar_state="expanded"
 )
 
-DATA_FILE_NAME = 'anime_cleaned.xlsx'
+DATA_FILE_PATH = str(BANGUMI_APP_DATA_DIR / ANIME_CLEANED_FILE)
 
 # --- 1. 数据加载与清洗 ---
 @st.cache_data
 def load_and_clean_data(file_path):
     # 此函数返回带有 datetime 对象的 DataFrame，用于准确的筛选和排序
     df = pd.DataFrame()
-    csv_path = file_path.replace('.xlsx', '.csv')
+    csv_path = str(Path(file_path).with_suffix('.csv'))
 
     # 尝试加载文件
     try:
@@ -24,7 +32,7 @@ def load_and_clean_data(file_path):
         try:
             df = pd.read_csv(csv_path)
         except FileNotFoundError:
-            st.error("找不到数据文件。请确保 'anime_cleaned.xlsx' 或对应的 CSV 文件存在。")
+            st.error(f"找不到数据文件。请确保 '{ANIME_CLEANED_FILE}' 或对应的 CSV 文件存在。")
             st.stop()
         except Exception as e:
             st.error(f"加载 CSV 文件时发生错误: {e}")
@@ -63,7 +71,7 @@ def load_and_clean_data(file_path):
 st.title("📺 Bangumi 动画排名数据分析")
 
 # 加载原始数据 (包含 datetime 对象)
-df_original = load_and_clean_data(DATA_FILE_NAME)
+df_original = load_and_clean_data(DATA_FILE_PATH)
 df_filtered = df_original.copy()  # 用于筛选操作
 
 # --- 3. 侧边栏筛选器 ---
@@ -172,10 +180,9 @@ df_display['开播日期'] = df_display['开播日期'].dt.strftime('%Y-%m-%d')
 st.caption(f"数据更新时间: {pd.Timestamp.now().strftime('%Y-%m-%d %H:%M:%S')}")
 
 st.dataframe(
-    df_display[['Bangumi排名', '中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi链接']],  
+    df_display[['Bangumi排名', '中文名', '原名', '开播日期', '评分', '评分人数', 'Bangumi链接']],
     width='stretch',
     column_config={
-       "row_numbers": st.column_config.NumberColumn("序号", width="small"),
         "Bangumi链接": st.column_config.LinkColumn(
             "Bangumi 链接",
             help="点击可查看 Bangumi 页面",
@@ -187,5 +194,3 @@ st.dataframe(
     },
     hide_index=True
 )
-
-
