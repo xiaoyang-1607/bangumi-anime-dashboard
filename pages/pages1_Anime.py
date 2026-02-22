@@ -46,7 +46,10 @@ def load_from_dataframe(df: pd.DataFrame) -> pd.DataFrame:
             "rank": "Bangumi排名",
         }
     )
-    return df[["中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi排名", "Bangumi链接"]]
+    out_cols = ["中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi排名", "Bangumi链接"]
+    if "meta_tags" in df.columns:
+        out_cols.append("meta_tags")
+    return df[[c for c in out_cols if c in df.columns]]
 
 
 @st.cache_data
@@ -132,6 +135,20 @@ user_min = st.sidebar.number_input(
 )
 df_filtered = df_filtered[df_filtered["评分人数"] >= user_min]
 
+# 标签筛选 (meta_tags)
+if "meta_tags" in df_filtered.columns:
+    tag_input = st.sidebar.text_input(
+        "标签筛选 (多个用逗号分隔)",
+        placeholder="如: 科幻, 原创",
+        key="a_tag",
+    )
+    if tag_input:
+        tags = [t.strip() for t in tag_input.split(",") if t.strip()]
+        for t in tags:
+            df_filtered = df_filtered[
+                df_filtered["meta_tags"].astype(str).str.contains(t, na=False)
+            ]
+
 sort_by = st.sidebar.selectbox(
     "排序", ("开播日期", "评分", "评分人数", "Bangumi排名")
 )
@@ -144,8 +161,9 @@ st.subheader(f"筛选结果 ({len(df_sorted)} 部)")
 df_display = df_sorted.copy()
 df_display["开播日期"] = df_display["开播日期"].dt.strftime("%Y-%m-%d")
 
+display_cols = ["Bangumi排名", "中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi链接"]
 st.dataframe(
-    df_display[["Bangumi排名", "中文名", "原名", "开播日期", "评分", "评分人数", "Bangumi链接"]],
+    df_display[[c for c in display_cols if c in df_display.columns]],
     column_config={
         "Bangumi链接": st.column_config.LinkColumn("链接", display_text="Bangumi"),
         "评分": st.column_config.NumberColumn("评分", format="%.1f"),

@@ -29,6 +29,7 @@ RENAME = {
     "score": "评分",
     "score_total": "评分人数",
     "rank": "Bangumi排名",
+    "meta_tags": "meta_tags",
 }
 
 
@@ -45,7 +46,10 @@ def load_from_dataframe(df: pd.DataFrame) -> pd.DataFrame:
     df["Bangumi排名"] = pd.to_numeric(df.get("Bangumi排名"), errors="coerce")
     id_col = "ID" if "ID" in df.columns else "id"
     df["Bangumi链接"] = "https://bgm.tv/subject/" + df[id_col].astype(str)
-    return df[["中文名", "原名", "发行日期", "评分", "评分人数", "Bangumi排名", "Bangumi链接"]]
+    out = ["中文名", "原名", "发行日期", "评分", "评分人数", "Bangumi排名", "Bangumi链接"]
+    if "meta_tags" in df.columns:
+        out.append("meta_tags")
+    return df[[c for c in out if c in df.columns]]
 
 
 @st.cache_data
@@ -126,6 +130,19 @@ user_min = st.sidebar.number_input(
 )
 df_filtered = df_filtered[df_filtered["评分人数"] >= user_min]
 
+if "meta_tags" in df_filtered.columns:
+    tag_input = st.sidebar.text_input(
+        "标签筛选 (多个用逗号分隔)",
+        placeholder="如: 冒险, RPG",
+        key="g_tag",
+    )
+    if tag_input:
+        tags = [t.strip() for t in tag_input.split(",") if t.strip()]
+        for t in tags:
+            df_filtered = df_filtered[
+                df_filtered["meta_tags"].astype(str).str.contains(t, na=False)
+            ]
+
 sort_by = st.sidebar.selectbox(
     "排序", ("发行日期", "评分", "评分人数", "Bangumi排名"), key="g_sort"
 )
@@ -137,8 +154,9 @@ st.subheader(f"筛选结果 ({len(df_sorted)} 个)")
 if len(df_sorted) > 0:
     df_display = df_sorted.copy()
     df_display["发行日期"] = df_display["发行日期"].dt.strftime("%Y-%m-%d")
+    disp = ["Bangumi排名", "中文名", "原名", "发行日期", "评分", "评分人数", "Bangumi链接"]
     st.dataframe(
-        df_display[["Bangumi排名", "中文名", "原名", "发行日期", "评分", "评分人数", "Bangumi链接"]],
+        df_display[[c for c in disp if c in df_display.columns]],
         column_config={
             "Bangumi链接": st.column_config.LinkColumn("链接", display_text="Bangumi"),
             "评分": st.column_config.NumberColumn("评分", format="%.1f"),

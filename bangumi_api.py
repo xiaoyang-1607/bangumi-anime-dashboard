@@ -62,14 +62,33 @@ def search_subjects(
     sort: str = "rank",
     limit: int = 50,
     offset: int = 0,
+    air_date: Optional[list[str]] = None,
+    rating: Optional[list[str]] = None,
+    rating_count: Optional[list[str]] = None,
+    meta_tags: Optional[list[str]] = None,
+    rank_filter: Optional[list[str]] = None,
 ) -> dict[str, Any]:
     """
-    条目搜索 POST /v0/search/subjects
-    keyword 可留空配合 filter 使用；实验性 API。
+    条目搜索 POST /v0/search/subjects，先筛选后获取。
+    filter: air_date 如 [">=2020-01-01", "<2024-01-01"], rating 如 [">=7", "<=9"],
+    rating_count 如 [">=100"], meta_tags 如 ["科幻", "原创"]。
     """
     body: dict = {"keyword": keyword or " ", "sort": sort}
+    flt: dict = {}
     if subject_type:
-        body["filter"] = {"type": subject_type}
+        flt["type"] = subject_type
+    if air_date:
+        flt["air_date"] = air_date
+    if rating:
+        flt["rating"] = rating
+    if rating_count:
+        flt["rating_count"] = rating_count
+    if meta_tags:
+        flt["meta_tags"] = meta_tags
+    if rank_filter:
+        flt["rank"] = rank_filter
+    if flt:
+        body["filter"] = flt
 
     resp = requests.post(
         f"{API_BASE}/v0/search/subjects",
@@ -80,6 +99,72 @@ def search_subjects(
     )
     resp.raise_for_status()
     return resp.json()
+
+
+def fetch_ranking_with_filters(
+    subject_type: int,
+    limit: int = 100,
+    air_date: Optional[list[str]] = None,
+    rating_min: Optional[float] = None,
+    rating_max: Optional[float] = None,
+    rating_count_min: Optional[int] = None,
+    meta_tags: Optional[list[str]] = None,
+) -> list[dict]:
+    """
+    带筛选的排行获取：有筛选时用 search API，无筛选时用 get_subjects。
+    先筛选后获取，减少请求量。
+    """
+    rows = []
+    offset = 0
+    use_search = air_date or rating_min is not None or rating_max is not None or rating_count_min or meta_tags
+
+    rating_filters = []
+    if rating_min is not None:
+        rating_filters.append(f">={rating_min}")
+    if rating_max is not None:
+        rating_filters.append(f"<={rating_max}")
+    if not rating_filters:
+        rating_filters = None
+
+    rating_count_filters = [f">={rating_count_min}"] if rating_count_min else None
+
+    while len(rows) < limit:
+        try:
+            if use_search:
+                data = search_subjects(
+                    keyword=" ",
+                    subject_type=[subject_type],
+                    sort="rank",
+                    limit=min(50, limit - len(rows)),
+                    offset=offset,
+                    air_date=air_date,
+                    rating=rating_filters,
+                    rating_count=rating_count_filters,
+                    meta_tags=meta_tags,
+                )
+            else:
+                data = get_subjects(
+                    subject_type=subject_type,
+                    sort="rank",
+                    limit=min(50, limit - len(rows)),
+                    offset=offset,
+                )
+        except requests.RequestException as e:
+            raise RuntimeError(f"API 请求失败: {e}") from e
+
+        items = data.get("data", [])
+        for s in items:
+            row = subject_to_row(s)
+            if row:
+                rows.append(row)
+                if len(rows) >= limit:
+                    break
+
+        if not items or len(items) < 50:
+            break
+        offset += 50
+
+    return rows
 
 
 def iter_all_subjects(
