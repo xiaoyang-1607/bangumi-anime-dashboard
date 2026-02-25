@@ -17,7 +17,7 @@ from get_source import (
 )
 
 # ---------- 手动设置：归档解压目录（内含 subject.jsonlines） ----------
-DUMP_DIR = Path(r"D:\path\to\your\bangumi-dump-extracted")
+DUMP_DIR = Path(r"D:\桌面\others\dump-2026-02-24.210320Z")
 # --------------------------------------------------------------------
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -82,7 +82,6 @@ def run():
 
     print("\n--- 5. 提交并推送到 GitHub（用新生成的文件替换仓库中已有的 xlsx）---")
     try:
-        # 将本次生成的文件加入暂存区，提交后即替换仓库中的旧版本
         to_add = [name for name, _ in existing_project_files]
         subprocess.run(
             ["git", "add"] + to_add,
