@@ -80,7 +80,7 @@ if df_original is None or df_original.empty:
         except Exception as e:
             st.error(f"解析失败: {e}")
     else:
-        st.info("请上传 xlsx 文件，或使用左侧「API 实时排行」查看在线数据。")
+        st.info("请上传 xlsx 文件。")
         st.stop()
 
 df_filtered = df_original.copy()
