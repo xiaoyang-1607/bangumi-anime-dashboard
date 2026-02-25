@@ -2,26 +2,13 @@ import json
 import pandas as pd
 from pathlib import Path
 
-from config import BANGUMI_DUMP_DIR, JSONL_FILE_NAME
-
-# --- 配置：可通过环境变量 BANGUMI_DUMP_DIR 覆盖 ---
-JSONL_PATH = BANGUMI_DUMP_DIR / JSONL_FILE_NAME
-
-# Define the numerical IDs for Anime and Game (based on the provided document)
+# 类型 ID（Bangumi 归档）
 TYPE_ANIME = 2
 TYPE_GAME = 4
 
-# Target output Excel files (used in both export and formatting steps)
-ANIME_OUTPUT_FILE = BANGUMI_DUMP_DIR / 'bangumi_anime_data.xlsx'
-GAME_OUTPUT_FILE = BANGUMI_DUMP_DIR / 'bangumi_game_data.xlsx'
-
-# Date column to format
+# 日期列与 Excel 日期格式
 DATE_COLUMN_NAME = 'date'
-
-# Explicit Excel date format (only date, no time)
 EXCEL_DATE_FORMAT = 'yyyy-mm-dd'
-
-# --- End Configuration ---
 
 def process_subject_data(jsonl_path):
     """
@@ -138,8 +125,10 @@ def apply_excel_date_format(file_path: Path, column_name: str, date_format: str)
         return
 
     try:
-        # 1. 读取 Excel 文件
-        df = pd.read_excel(file_path, engine='openpyxl')
+        # 1. 读取 Excel 文件（保留首 sheet 名称以便写回时一致）
+        with pd.ExcelFile(file_path, engine='openpyxl') as xl:
+            sheet_name = xl.sheet_names[0]
+            df = pd.read_excel(xl, sheet_name=sheet_name)
 
         if column_name not in df.columns:
             print(f"警告: 文件中未找到列名 '{column_name}'，跳过日期格式修复。")
@@ -153,9 +142,8 @@ def apply_excel_date_format(file_path: Path, column_name: str, date_format: str)
         # 'openpyxl' engine does not support formatting, so we re-write the file with 'xlsxwriter'
         writer = pd.ExcelWriter(file_path, engine='xlsxwriter', datetime_format=date_format)
 
-        # 将 DataFrame 写入工作表
-        # We use a default sheet name 'Sheet1' since 'to_excel' was used in the previous step
-        df.to_excel(writer, index=False, sheet_name='Sheet1')
+        # 写回时使用原 sheet 名称，与 export_to_excel 的 Anime_Subjects / Game_Subjects 一致
+        df.to_excel(writer, index=False, sheet_name=sheet_name)
 
         # 保存并关闭文件
         # This operation overwrites the original file
@@ -167,36 +155,3 @@ def apply_excel_date_format(file_path: Path, column_name: str, date_format: str)
         print(f"[ERROR] 修复文件 {file_base_name} 的日期格式时发生错误: {e}")
 
 
-def main():
-    """
-    Main execution function: Process data, export to Excel, and apply date formatting.
-    """
-    # 1. Process the JSONL data
-    anime_data, game_data = process_subject_data(JSONL_PATH)
-
-    if anime_data is None and game_data is None:
-        print("\nProcess halted due to critical data processing error(s).")
-        return
-
-    # 2. Export Data to Excel
-    print("\n--- 阶段 2: 导出 Excel 文件 ---")
-    anime_exported = export_to_excel(anime_data, ANIME_OUTPUT_FILE, 'Anime_Subjects')
-    game_exported = export_to_excel(game_data, GAME_OUTPUT_FILE, 'Game_Subjects')
-
-    # 3. Apply Date Formatting to the exported files
-    print("\n--- 阶段 3: 修复 Excel 日期格式 ---")
-    if anime_exported:
-        apply_excel_date_format(ANIME_OUTPUT_FILE, DATE_COLUMN_NAME, EXCEL_DATE_FORMAT)
-
-    if game_exported:
-        apply_excel_date_format(GAME_OUTPUT_FILE, DATE_COLUMN_NAME, EXCEL_DATE_FORMAT)
-
-    print("\n=====================================")
-    print("[OK] 所有提取、导出和格式化操作已完成。")
-    print(f"动画数据文件: {ANIME_OUTPUT_FILE}")
-    print(f"游戏数据文件: {GAME_OUTPUT_FILE}")
-    print("=====================================")
-
-
-if __name__ == '__main__':
-    main()

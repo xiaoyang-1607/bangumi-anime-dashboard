@@ -14,5 +14,5 @@ st.markdown("""
 * **Anime（动画榜单）**：动画作品排名与筛选
 * **Game（游戏榜单）**：游戏作品排名与筛选
 
-数据需使用 `get_source.py` 从 Bangumi 归档生成 xlsx 后，上传或放入项目目录。
+数据需使用 `main.py` 从 Bangumi 归档生成 xlsx 后，上传或放入项目目录。
 """)
