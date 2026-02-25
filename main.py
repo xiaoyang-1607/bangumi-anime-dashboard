@@ -44,7 +44,7 @@ def run():
     anime_paths = [d / ANIME_FILE for d in out_dirs]
     game_paths = [d / GAME_FILE for d in out_dirs]
 
-    print("\n--- 2. 导出 Excel（解压目录 + 项目目录）---")
+    print("\n--- 2. 导出 Excel（解压目录 + 项目目录，若已有同名文件则覆盖）---")
     for path in anime_paths:
         export_to_excel(anime_data, path, "Anime_Subjects")
     for path in game_paths:
@@ -80,10 +80,12 @@ def run():
             print(f"格式检查警告 [{name}]: 无数据行，仍将上传。")
     print("[OK] 格式检查通过。")
 
-    print("\n--- 5. 提交并推送到 GitHub ---")
+    print("\n--- 5. 提交并推送到 GitHub（用新生成的文件替换仓库中已有的 xlsx）---")
     try:
+        # 将本次生成的文件加入暂存区，提交后即替换仓库中的旧版本
+        to_add = [name for name, _ in existing_project_files]
         subprocess.run(
-            ["git", "add"] + [name for name, _ in existing_project_files],
+            ["git", "add"] + to_add,
             cwd=PROJECT_ROOT,
             check=True,
             capture_output=True,
