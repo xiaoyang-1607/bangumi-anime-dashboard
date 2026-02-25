@@ -3,9 +3,10 @@
 venv/
 env/
 
-# IDE
+# IDE / 编辑器（仅本地，不提交）
 .idea/
 .vscode/
+.cursor/
 *.pyc
 __pycache__/
 *.pyo
