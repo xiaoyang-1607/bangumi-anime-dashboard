@@ -1,117 +1,141 @@
 # Bangumi 综合数据分析平台
 
+[![CI](https://github.com/xiaoyang-1607/bangumi-anime-dashboard/actions/workflows/ci.yml/badge.svg)](https://github.com/xiaoyang-1607/bangumi-anime-dashboard/actions/workflows/ci.yml)
 [![Streamlit App](https://static.streamlit.io/badges/streamlit_badge_black_white.svg)](https://bangumi-anime-dashboard-wvdgaakdmuyfd7s9v4ujj3.streamlit.app/)
 
-基于 Bangumi 归档数据构建的交互式榜单：**动画榜单**与**游戏榜单**，支持按名称、日期、评分、标签筛选与排序。
+一个基于 [Bangumi Archive](https://github.com/bangumi/Archive) 的 Streamlit 数据分析应用。它把归档中的动画和游戏条目清洗为统一数据集，并提供名称、日期、评分、评分人数、标签与排名筛选。
 
----
+## 主要功能
 
-## 快速开始（仅查看榜单）
+- 动画榜单与游戏榜单，共用一致的筛选和排序体验
+- 首页收录量、评分人次和高口碑作品概览
+- 当前筛选结果的指标、年份分布和热门标签分析
+- 精确标签组合筛选、Bangumi 详情链接、CSV 结果下载
+- 本地文件优先，也可在页面上传标准 xlsx
+- 数据生成、校验与发布分离；默认不会自动提交或推送
+- 每周自动检查最新 Bangumi Archive，仅在数据变化时提交新榜单
 
-若你只想在本地或在线查看榜单、不做数据更新：
+## 快速开始
 
-1. **克隆并安装**
-   ```bash
-   git clone https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git
-   cd bangumi-anime-dashboard
-   pip install -r requirements.txt
-   ```
+推荐 Python 3.10 或更高版本。
 
-2. **启动应用**
-   ```bash
-   streamlit run app.py
-   ```
-
-3. **使用数据**
-   - 若项目根目录已有 `anime_cleaned.xlsx`、`game_cleaned.xlsx`，应用会自动加载。
-   - 若无，在左侧进入 **Anime** 或 **Game** 页面后，在页面内**上传**对应的 xlsx 文件即可。
-
-也可直接使用 [Streamlit Cloud 在线应用](https://bangumi-anime-dashboard-wvdgaakdmuyfd7s9v4ujj3.streamlit.app/)（若仓库中已包含上述 xlsx，会直接展示）。
-
----
-
-## 从归档生成数据并更新到 GitHub
-
-若你需要**自己从 Bangumi 归档生成** `anime_cleaned.xlsx` / `game_cleaned.xlsx`，并**自动提交、推送到本仓库**，按以下步骤操作。
-
-### 1. 获取 Bangumi 归档
-
-- 打开 [Bangumi Archive Releases](https://github.com/bangumi/Archive/releases)，下载最新的 `dump-*.zip`。
-- 解压后，确保目录内包含 **`subject.jsonlines`**。
-
-### 2. 在项目中设置解压目录
-
-用编辑器打开项目根目录下的 **`main.py`**，修改顶部的解压目录（使用你的实际路径）：
-
-```python
-# ---------- 手动设置：归档解压目录（内含 subject.jsonlines） ----------
-DUMP_DIR = Path(r"D:\path\to\your\bangumi-dump-extracted")  # 改为你的解压路径
-# --------------------------------------------------------------------
+```bash
+git clone https://github.com/xiaoyang-1607/bangumi-anime-dashboard.git
+cd bangumi-anime-dashboard
+python -m venv .venv
+.venv\Scripts\activate
+pip install -r requirements.txt
+streamlit run app.py
 ```
 
-例如解压到了 `D:\data\bangumi-dump`，则写：
+macOS / Linux 激活虚拟环境时使用 `source .venv/bin/activate`。
 
-```python
-DUMP_DIR = Path(r"D:\data\bangumi-dump")
+仓库根目录已经包含 `anime_cleaned.xlsx` 与 `game_cleaned.xlsx`，因此启动后可以直接浏览。
+
+## 更新数据
+
+1. 从 [Bangumi Archive Releases](https://github.com/bangumi/Archive/releases) 下载并解压最新归档。
+2. 复制 `.env.example` 为 `.env`，配置归档路径：
+
+```dotenv
+BANGUMI_DUMP_DIR=D:\data\dump-2026-08-01
+BANGUMI_APP_DATA_DIR=.
 ```
 
-### 3. 运行生成与上传
-
-在项目根目录执行：
+3. 生成并校验数据：
 
 ```bash
 python main.py
 ```
 
-脚本会依次：
+常用参数：
 
-1. 读取 `DUMP_DIR/subject.jsonlines`，清洗出动画与游戏数据。
-2. 生成 **`anime_cleaned.xlsx`**、**`game_cleaned.xlsx`**，并保存到：
-   - 解压目录（`DUMP_DIR`）
-   - 项目根目录
-3. 对项目根目录下的 xlsx 做格式检查。
-4. 若检查通过：`git add` → `git commit` → `git push origin main`，用新文件**替换**仓库中已有的同名 xlsx。
+```bash
+# 不使用 .env，临时指定输入输出目录
+python main.py --dump-dir D:\data\bangumi-dump --output-dir .
 
-若项目目录中原本已有这两个 xlsx，会被新生成的文件覆盖；推送后 GitHub 上的文件也会被更新。
+# 同时在归档目录保存一份结果
+python main.py --also-save-to-dump
 
-### 4. 查看结果
+# 生成成功后才提交并推送当前分支（这是显式操作）
+python main.py --publish
 
-- 本地：再次运行 `streamlit run app.py`，应用会从项目根目录读取最新的 xlsx。
-- 在线：若已配置 Streamlit Cloud 等，推送后会自动使用仓库中的新数据。
+# 指定推送目标
+python main.py --publish --remote origin --branch main
+```
 
----
+运行 `python main.py --help` 可查看全部参数。发布模式只会暂存两个生成的数据文件，不会把其他工作区改动带入提交。
 
-## 功能说明
+### 一键获取最新归档
 
-| 页面 | 说明 |
-|------|------|
-| **Anime（动画榜单）** | 按开播日期、评分、评分人数、Bangumi 排名筛选与排序，支持名称搜索与标签筛选 |
-| **Game（游戏榜单）** | 按发行日期、评分、评分人数、Bangumi 排名筛选与排序，支持名称搜索与标签筛选 |
+不需要手动下载和解压完整归档，下面的命令会查询 Bangumi Archive、选择时间戳最新的 zip、只提取 `subject.jsonlines`，然后生成并校验两个榜单：
 
-数据来源：`anime_cleaned.xlsx` / `game_cleaned.xlsx`，可由 **`main.py`** 从 Bangumi 归档自动生成（见上文）。
+```bash
+python update_data.py
+```
 
----
+更新器会在 `data_metadata.json` 记录已经处理的归档；再次运行时如果远端资源未变化，会直接跳过。需要强制重建时使用：
+
+```bash
+python update_data.py --force
+```
+
+归档目前超过 400 MiB，首次执行耗时取决于网络速度，但不会把下载文件保留在仓库中。
+
+### GitHub 定时更新
+
+`.github/workflows/update-data.yml` 每周三 00:30 UTC（北京时间 08:30）自动执行，也可以在 GitHub Actions 页面手动运行。流程会：
+
+1. 获取最新 `dump-*.zip`；
+2. 生成并校验动画、游戏 Excel；
+3. 运行全部回归测试；
+4. 只有数据发生变化时才提交并推送 `main`。
+
+工作流使用仓库自带的 `GITHUB_TOKEN`，无需额外配置密钥。如果仓库启用了禁止 Actions 写入或严格分支保护，需要在仓库设置中允许 GitHub Actions 写入内容，或改成 Pull Request 工作流。
+
+## 数据格式
+
+页面要求 Excel 至少包含以下字段：
+
+| 字段 | 含义 |
+| --- | --- |
+| `id` | Bangumi 条目 ID |
+| `name` / `name_cn` | 原名 / 中文名 |
+| `date` | 开播或发行日期 |
+| `meta_tags` | 逗号分隔标签 |
+| `score` | Bangumi 评分 |
+| `score_total` | 评分人数 |
+| `rank` | Bangumi 排名 |
+
+上传文件缺少必要列时，页面会直接显示可操作的错误提示。
 
 ## 项目结构
 
-| 文件/目录 | 说明 |
-|-----------|------|
-| `app.py` | Streamlit 应用入口 |
-| `pages/pages1_Anime.py` | 动画榜单页 |
-| `pages/pages2_Game.py` | 游戏榜单页 |
-| `ranking_ui.py` | 榜单页公共逻辑（加载、筛选、展示） |
-| `main.py` | **数据流水线**：从归档生成 xlsx，双路保存并推送到 GitHub（解压目录在脚本内设置） |
-| `get_source.py` | 归档 JSONL 的读取与导出（被 `main.py` 调用） |
-| `config.py` | 应用路径等配置（可配合环境变量） |
-| `best.py` | 月度最佳统计脚本（依赖 `BANGUMI_DUMP_DIR` 下的 xlsx） |
+| 路径 | 用途 |
+| --- | --- |
+| `app.py` | Streamlit 首页与跨类别概览 |
+| `pages/` | 动画、游戏榜单页面 |
+| `ranking_ui.py` | 数据校验、纯筛选函数与通用 UI |
+| `main.py` | 可配置的数据生成、校验与可选发布 CLI |
+| `update_data.py` | 最新归档发现、流式下载、选择性解压与幂等更新 |
+| `get_source.py` | JSONL 流式清洗与 Excel 导出 |
+| `config.py` | `.env` / 系统环境变量配置 |
+| `tests/` | 数据处理与筛选回归测试 |
 
----
+## 测试
 
-## 环境变量（可选）
+```bash
+python -m unittest discover -s tests -v
+python -m compileall -q app.py config.py get_source.py main.py ranking_ui.py update_data.py pages tests
+```
 
-| 变量 | 说明 | 默认值 |
-|------|------|--------|
-| `BANGUMI_APP_DATA_DIR` | Streamlit 读取 xlsx 的目录 | 项目根目录 |
-| `BANGUMI_DUMP_DIR` | 仅被 `best.py`、`test_data.py` 使用 | `./data` |
+GitHub Actions 会在 Python 3.10 与 3.12 上执行相同检查。
 
-归档解压路径**不在**环境变量中配置，请在 **`main.py`** 内修改 `DUMP_DIR`。
+## 环境变量
+
+| 变量 | 默认值 | 说明 |
+| --- | --- | --- |
+| `BANGUMI_DUMP_DIR` | `./data` | 包含 `subject.jsonlines` 的归档目录 |
+| `BANGUMI_APP_DATA_DIR` | 项目根目录 | 页面读取和 CLI 输出榜单数据的目录 |
+
+系统环境变量优先于 `.env`；`.env` 已加入 `.gitignore`，适合存放本机路径。

@@ -1,0 +1,59 @@
+name: Update Bangumi data
+
+on:
+  schedule:
+    # Bangumi Archive 通常在周二晚（UTC）发布，延后数小时执行。
+    - cron: "30 0 * * 3"
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 即使归档未变化也重新生成
+        required: false
+        default: false
+        type: boolean
+
+permissions:
+  contents: write
+
+concurrency:
+  group: bangumi-data-update
+  cancel-in-progress: false
+
+jobs:
+  update:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: main
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -r requirements.txt
+      - name: Download archive and generate datasets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          FORCE_UPDATE: ${{ inputs.force || 'false' }}
+        run: |
+          if [ "$FORCE_UPDATE" = "true" ]; then
+            python update_data.py --force
+          else
+            python update_data.py
+          fi
+      - name: Verify generated data
+        run: |
+          python -m unittest discover -s tests -v
+          python -m compileall -q app.py config.py get_source.py main.py ranking_ui.py update_data.py pages tests
+      - name: Commit changed datasets
+        run: |
+          if [ -z "$(git status --porcelain -- anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json)" ]; then
+            echo "No data changes"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json
+          git commit -m "chore(data): update Bangumi archive"
+          git push origin HEAD:main

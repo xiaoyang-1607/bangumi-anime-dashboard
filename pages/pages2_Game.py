@@ -1,8 +1,5 @@
-"""
-游戏榜单 - 基于归档导出的 xlsx 数据
+"""Bangumi 游戏榜单页面。"""
 
-使用 main.py 从 Bangumi 归档生成 xlsx 后，上传或放入项目根目录。
-"""
 import sys
 from pathlib import Path
 
@@ -12,32 +9,36 @@ import streamlit as st
 
 from config import BANGUMI_APP_DATA_DIR, GAME_CLEANED_FILE
 from ranking_ui import (
+    RANK,
+    SCORE,
+    SCORE_TOTAL,
     apply_sidebar_filters,
     load_data_or_upload,
+    render_insights,
+    render_overview,
     render_table,
 )
 
 st.set_page_config(
     page_title="Bangumi 游戏榜单",
+    page_icon="🎮",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-DATE_COL = "发行日期"
+DATE_COLUMN = "发行日期"
 DEFAULT_PATH = BANGUMI_APP_DATA_DIR / GAME_CLEANED_FILE
 
 st.title("Bangumi 游戏榜单")
-st.caption("数据来自归档导出的 xlsx。需先运行 main.py 生成，或从下方上传。")
+st.caption("探索游戏作品的口碑、热度、年代与标签分布。")
 
-df_original = load_data_or_upload(
-    DEFAULT_PATH,
-    "上传 game_cleaned.xlsx",
-    DATE_COL,
+original = load_data_or_upload(DEFAULT_PATH, "上传 game_cleaned.xlsx", DATE_COLUMN)
+filtered = apply_sidebar_filters(
+    original,
+    DATE_COLUMN,
+    (DATE_COLUMN, SCORE, SCORE_TOTAL, RANK),
+    key_prefix="game_",
 )
-df_sorted = apply_sidebar_filters(
-    df_original,
-    DATE_COL,
-    ("发行日期", "评分", "评分人数", "Bangumi排名"),
-    key_prefix="g_",
-)
-render_table(df_sorted, DATE_COL, unit="个")
+render_overview(original, filtered, DATE_COLUMN)
+render_insights(filtered, DATE_COLUMN)
+render_table(filtered, DATE_COLUMN, unit="款", download_name="bangumi_game_filtered.csv")

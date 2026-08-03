@@ -1,0 +1,1 @@
+"""Bangumi dashboard test suite."""
