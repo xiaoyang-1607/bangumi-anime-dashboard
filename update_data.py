@@ -24,10 +24,12 @@ from config import (
     ANIME_CLEANED_FILE,
     BANGUMI_APP_DATA_DIR,
     DATA_METADATA_FILE,
+    DATA_QUALITY_REPORT_FILE,
     GAME_CLEANED_FILE,
     JSONL_FILE_NAME,
 )
 from main import generate_files
+from get_source import PIPELINE_VERSION
 
 
 ARCHIVE_RELEASE_API = "https://api.github.com/repos/bangumi/Archive/releases/latest"
@@ -188,6 +190,22 @@ def _record_count(path: Path) -> int:
     return len(pd.read_excel(path, engine="openpyxl", usecols=["id"]))
 
 
+def validate_record_count_change(
+    previous: dict[str, Any], current: dict[str, int], maximum_drop_ratio: float = 0.1
+) -> None:
+    """阻止自动任务在数据量异常骤降时覆盖正常数据。"""
+    for key, current_count in current.items():
+        previous_count = previous.get(key)
+        if not isinstance(previous_count, int) or previous_count <= 0:
+            continue
+        minimum_expected = int(previous_count * (1 - maximum_drop_ratio))
+        if current_count < minimum_expected:
+            raise RuntimeError(
+                f"{key} 从 {previous_count:,} 降至 {current_count:,}，"
+                f"超过允许的 {maximum_drop_ratio:.0%} 跌幅；请人工核查或使用 --force"
+            )
+
+
 def update_latest_data(
     output_dir: Path,
     *,
@@ -204,11 +222,13 @@ def update_latest_data(
     required_files = [
         output_dir / ANIME_CLEANED_FILE,
         output_dir / GAME_CLEANED_FILE,
+        output_dir / DATA_QUALITY_REPORT_FILE,
     ]
     if (
         not force
         and current.get("archive_asset_id") == latest.asset_id
         and current.get("archive_name") == latest.name
+        and current.get("pipeline_version") == PIPELINE_VERSION
         and all(path.is_file() for path in required_files)
     ):
         print(f"数据已经来自最新归档：{latest.name}")
@@ -222,9 +242,21 @@ def update_latest_data(
         staged_output = work_dir / "output"
         download_asset(latest, archive_path, token)
         extract_subject_jsonl(archive_path, dump_dir / JSONL_FILE_NAME)
-        generated = generate_files(dump_dir, staged_output)
+        generated = generate_files(
+            dump_dir, staged_output, as_of_date=latest.timestamp.date()
+        )
         generated_by_name = {path.name: path for path in generated}
-        for name in (ANIME_CLEANED_FILE, GAME_CLEANED_FILE):
+        new_counts = {
+            "anime_records": _record_count(generated_by_name[ANIME_CLEANED_FILE]),
+            "game_records": _record_count(generated_by_name[GAME_CLEANED_FILE]),
+        }
+        if not force:
+            validate_record_count_change(current, new_counts)
+        for name in (
+            ANIME_CLEANED_FILE,
+            GAME_CLEANED_FILE,
+            DATA_QUALITY_REPORT_FILE,
+        ):
             generated_by_name[name].replace(output_dir / name)
 
     metadata = {
@@ -233,9 +265,11 @@ def update_latest_data(
         "archive_url": latest.url,
         "archive_created_at": latest.created_at,
         "archive_updated_at": latest.updated_at,
+        "pipeline_version": PIPELINE_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "anime_records": _record_count(output_dir / ANIME_CLEANED_FILE),
         "game_records": _record_count(output_dir / GAME_CLEANED_FILE),
+        "quality_report": DATA_QUALITY_REPORT_FILE,
     }
     temporary_metadata = metadata_path.with_suffix(".json.tmp")
     temporary_metadata.write_text(

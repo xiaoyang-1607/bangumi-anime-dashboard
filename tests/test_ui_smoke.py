@@ -30,16 +30,17 @@ class StreamlitUiSmokeTests(unittest.TestCase):
     def test_quick_filter_and_reset_update_result_count(self):
         app = AppTest.from_file(PROJECT_ROOT / "pages/pages1_Anime.py").run(timeout=60)
         total = int(app.metric[0].value.replace(",", ""))
+        initial_result = int(app.metric[1].value.replace(",", ""))
 
         app.selectbox[0].select("高分佳作")
         app.run(timeout=60)
         filtered = int(app.metric[1].value.replace(",", ""))
         self.assertGreater(filtered, 0)
-        self.assertLess(filtered, total)
+        self.assertLess(filtered, initial_result)
 
         app.button[1].click()
         app.run(timeout=60)
-        self.assertEqual(int(app.metric[1].value.replace(",", "")), total)
+        self.assertEqual(int(app.metric[1].value.replace(",", "")), initial_result)
 
 
 if __name__ == "__main__":

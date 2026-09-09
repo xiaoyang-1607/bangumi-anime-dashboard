@@ -46,6 +46,7 @@ JSONL_FILE_NAME = "subject.jsonlines"
 ANIME_CLEANED_FILE = "anime_cleaned.xlsx"
 GAME_CLEANED_FILE = "game_cleaned.xlsx"
 DATA_METADATA_FILE = "data_metadata.json"
+DATA_QUALITY_REPORT_FILE = "data_quality_report.json"
 
 DATA_FILES = {
     "动画": ANIME_CLEANED_FILE,

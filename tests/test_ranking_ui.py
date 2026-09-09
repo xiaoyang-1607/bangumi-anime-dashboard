@@ -5,6 +5,7 @@ import pandas as pd
 
 from ranking_ui import (
     NAME_CN,
+    NSFW,
     RANK,
     SCORE,
     TAGS,
@@ -28,6 +29,7 @@ class RankingDataTests(unittest.TestCase):
                     "score": 8.4,
                     "score_total": 1200,
                     "rank": 120,
+                    "nsfw": False,
                 },
                 {
                     "id": 2,
@@ -38,6 +40,7 @@ class RankingDataTests(unittest.TestCase):
                     "score": 7.6,
                     "score_total": 300,
                     "rank": 800,
+                    "nsfw": True,
                 },
                 {
                     "id": 3,
@@ -48,6 +51,18 @@ class RankingDataTests(unittest.TestCase):
                     "score": 9.0,
                     "score_total": 8000,
                     "rank": 20,
+                    "nsfw": False,
+                },
+                {
+                    "id": 4,
+                    "name": "Unknown date",
+                    "name_cn": "日期未知",
+                    "date": None,
+                    "meta_tags": "实验",
+                    "score": 7.8,
+                    "score_total": 500,
+                    "rank": 500,
+                    "nsfw": "false",
                 },
             ]
         )
@@ -56,6 +71,7 @@ class RankingDataTests(unittest.TestCase):
     def test_normalizes_names_and_links(self):
         self.assertEqual(self.data.loc[1, NAME_CN], "Beta")
         self.assertEqual(self.data.loc[0, "Bangumi链接"], "https://bgm.tv/subject/1")
+        self.assertFalse(self.data.loc[3, NSFW])
 
     def test_missing_required_column_has_clear_error(self):
         with self.assertRaisesRegex(ValueError, "score_total"):
@@ -83,6 +99,27 @@ class RankingDataTests(unittest.TestCase):
             ascending=True,
         )
         self.assertEqual(result[RANK].tolist(), [20, 120])
+
+    def test_unknown_dates_and_nsfw_are_explicit_filters(self):
+        hidden = filter_dataframe(
+            self.data,
+            date_column="开播日期",
+            include_unknown_dates=True,
+            nsfw_mode="hide",
+            sort_by=RANK,
+            ascending=True,
+        )
+        self.assertEqual(hidden[NAME_CN].tolist(), ["硬科幻", "阿尔法", "日期未知"])
+
+        only_nsfw = filter_dataframe(
+            self.data,
+            date_column="开播日期",
+            include_unknown_dates=True,
+            nsfw_mode="only",
+            sort_by=RANK,
+            ascending=True,
+        )
+        self.assertEqual(only_nsfw[NAME_CN].tolist(), ["Beta"])
 
     def test_tag_filter_is_exact(self):
         result = filter_dataframe(

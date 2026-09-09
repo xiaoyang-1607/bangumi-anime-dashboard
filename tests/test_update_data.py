@@ -11,7 +11,9 @@ from update_data import (
     fetch_latest_asset,
     select_latest_asset,
     update_latest_data,
+    validate_record_count_change,
 )
+from get_source import PIPELINE_VERSION
 
 
 class DataUpdaterTests(unittest.TestCase):
@@ -80,14 +82,25 @@ class DataUpdaterTests(unittest.TestCase):
             root = Path(directory)
             (root / "anime_cleaned.xlsx").touch()
             (root / "game_cleaned.xlsx").touch()
+            (root / "data_quality_report.json").touch()
             (root / "data_metadata.json").write_text(
                 json.dumps(
-                    {"archive_asset_id": asset.asset_id, "archive_name": asset.name}
+                    {
+                        "archive_asset_id": asset.asset_id,
+                        "archive_name": asset.name,
+                        "pipeline_version": PIPELINE_VERSION,
+                    }
                 ),
                 encoding="utf-8",
             )
             changed = update_latest_data(root)
         self.assertFalse(changed)
+
+    def test_rejects_anomalous_record_count_drop(self):
+        with self.assertRaisesRegex(RuntimeError, "超过允许"):
+            validate_record_count_change(
+                {"anime_records": 10_000}, {"anime_records": 8_000}
+            )
 
 
 if __name__ == "__main__":

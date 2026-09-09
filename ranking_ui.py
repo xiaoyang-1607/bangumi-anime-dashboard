@@ -28,6 +28,12 @@ SCORE_TOTAL = "评分人数"
 RANK = "Bangumi排名"
 LINK = "Bangumi链接"
 TAGS = "标签"
+USER_TAGS = "用户标签"
+NSFW = "NSFW"
+RELEASE_STATUS = "发行状态"
+FAVORITE = "收藏人数"
+BAYESIAN_SCORE = "综合评分"
+SCORE_CONFIDENCE = "评分可信度"
 
 _BASE_RENAME = {
     "name": NAME,
@@ -36,6 +42,12 @@ _BASE_RENAME = {
     "score_total": SCORE_TOTAL,
     "rank": RANK,
     "meta_tags": TAGS,
+    "user_tags": USER_TAGS,
+    "nsfw": NSFW,
+    "release_status": RELEASE_STATUS,
+    "favorite": FAVORITE,
+    "bayesian_score": BAYESIAN_SCORE,
+    "score_confidence": SCORE_CONFIDENCE,
 }
 
 
@@ -48,6 +60,17 @@ def _tag_tokens(value: object) -> list[str]:
 def _format_count(value: object) -> str:
     """格式化人数；兼容 Streamlit 测试框架回传的已格式化字符串。"""
     return f"{int(str(value).replace(',', '')):,}"
+
+
+def _coerce_boolean(value: object) -> bool:
+    """兼容 Excel 中的布尔值、0/1 和常见文本写法。"""
+    if isinstance(value, bool):
+        return value
+    if pd.isna(value):
+        return False
+    if isinstance(value, (int, float)):
+        return value != 0
+    return str(value).strip().casefold() in {"true", "1", "yes", "y"}
 
 
 def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFrame:
@@ -65,10 +88,24 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     data["score"] = pd.to_numeric(data["score"], errors="coerce")
     data["score_total"] = pd.to_numeric(data["score_total"], errors="coerce")
     data["rank"] = pd.to_numeric(data["rank"], errors="coerce")
-    data = data.dropna(subset=["date", "score", "score_total", "rank", "id"])
+    data = data.dropna(subset=["score", "score_total", "rank", "id"])
 
     data["score_total"] = data["score_total"].clip(lower=0).astype("int64")
     data["rank"] = data["rank"].astype("int64")
+    if "favorite" in data.columns:
+        data["favorite"] = pd.to_numeric(data["favorite"], errors="coerce").fillna(0).astype("int64")
+    if "bayesian_score" in data.columns:
+        data["bayesian_score"] = pd.to_numeric(data["bayesian_score"], errors="coerce")
+    if "nsfw" in data.columns:
+        data["nsfw"] = data["nsfw"].map(_coerce_boolean)
+    if "release_status" in data.columns:
+        data["release_status"] = data["release_status"].map(
+            {"released": "已发行", "upcoming": "即将发行", "unknown_date": "日期未知"}
+        ).fillna("日期未知")
+    if "score_confidence" in data.columns:
+        data["score_confidence"] = data["score_confidence"].map(
+            {"high": "高", "medium": "中", "low": "低"}
+        ).fillna("低")
     data[LINK] = data["id"].map(lambda item: f"https://bgm.tv/subject/{int(item)}")
 
     if "meta_tags" in data.columns:
@@ -77,8 +114,12 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     rename = {**_BASE_RENAME, "date": date_display_name}
     data = data.rename(columns=rename)
     columns = [NAME_CN, NAME, date_display_name, SCORE, SCORE_TOTAL, RANK, LINK]
-    if TAGS in data.columns:
-        columns.append(TAGS)
+    for optional_column in (
+        BAYESIAN_SCORE, SCORE_CONFIDENCE, FAVORITE, RELEASE_STATUS,
+        NSFW, TAGS, USER_TAGS,
+    ):
+        if optional_column in data.columns:
+            columns.append(optional_column)
     return data[columns].reset_index(drop=True)
 
 
@@ -109,6 +150,8 @@ def filter_dataframe(
     maximum_votes: int | None = None,
     tags: Iterable[str] = (),
     tag_match: str = "all",
+    include_unknown_dates: bool = False,
+    nsfw_mode: str = "all",
     sort_by: str = SCORE,
     ascending: bool = False,
 ) -> pd.DataFrame:
@@ -125,11 +168,15 @@ def filter_dataframe(
         )
         result = result[name_mask | original_name_mask]
 
+    date_mask = result[date_column].notna()
     if start_date is not None:
-        result = result[result[date_column] >= pd.Timestamp(start_date)]
+        date_mask &= result[date_column] >= pd.Timestamp(start_date)
     if end_date is not None:
         inclusive_end = pd.Timestamp(end_date).normalize() + pd.Timedelta(days=1)
-        result = result[result[date_column] < inclusive_end]
+        date_mask &= result[date_column] < inclusive_end
+    if include_unknown_dates:
+        date_mask |= result[date_column].isna()
+    result = result[date_mask]
 
     if score_range is not None:
         result = result[result[SCORE].between(*score_range, inclusive="both")]
@@ -149,9 +196,19 @@ def filter_dataframe(
             )
         )]
 
+    if NSFW in result.columns:
+        if nsfw_mode == "hide":
+            result = result[~result[NSFW]]
+        elif nsfw_mode == "only":
+            result = result[result[NSFW]]
+        elif nsfw_mode != "all":
+            raise ValueError("nsfw_mode 只支持 hide、all 或 only")
+
     if sort_by not in result.columns:
         raise ValueError(f"无法按不存在的列排序：{sort_by}")
-    return result.sort_values(sort_by, ascending=ascending, kind="stable").reset_index(drop=True)
+    return result.sort_values(
+        sort_by, ascending=ascending, kind="stable", na_position="last"
+    ).reset_index(drop=True)
 
 
 def apply_quick_preset(
@@ -167,14 +224,17 @@ def apply_quick_preset(
     if preset == "冷门佳作":
         return df[(df[SCORE] >= 8.0) & df[SCORE_TOTAL].between(100, 2_000)], ["评分 ≥ 8.0", "100–2,000 人评分"]
     if preset == "近三年":
-        cutoff = df[date_column].max() - pd.DateOffset(years=3)
+        latest_date = df[date_column].max()
+        if pd.isna(latest_date):
+            return df.iloc[0:0], ["近三年"]
+        cutoff = latest_date - pd.DateOffset(years=3)
         return df[df[date_column] >= cutoff], [f"{cutoff.year} 年至今"]
     raise ValueError(f"未知快捷筛选：{preset}")
 
 
 _FILTER_WIDGETS = (
     "preset", "search", "dates", "score", "minimum_votes", "tags",
-    "tag_match", "sort",
+    "tag_match", "sort", "include_unknown_dates", "nsfw_mode",
 )
 
 
@@ -205,8 +265,12 @@ def apply_sidebar_filters(
         key=f"{k}preset",
         width="stretch",
     )
-    minimum_date = df_original[date_column].min().date()
-    maximum_date = df_original[date_column].max().date()
+    valid_dates = df_original[date_column].dropna()
+    if valid_dates.empty:
+        minimum_date = maximum_date = date.today()
+    else:
+        minimum_date = valid_dates.min().date()
+        maximum_date = valid_dates.max().date()
     minimum_score = float(df_original[SCORE].min())
     maximum_score = float(df_original[SCORE].max())
 
@@ -219,6 +283,9 @@ def apply_sidebar_filters(
             selected_dates = st.date_input(
                 "日期范围", value=(minimum_date, maximum_date),
                 min_value=minimum_date, max_value=maximum_date, key=f"{k}dates",
+            )
+            include_unknown_dates = st.checkbox(
+                "包含日期未知作品", value=False, key=f"{k}include_unknown_dates"
             )
             score_range = st.slider(
                 "评分范围", minimum_score, maximum_score,
@@ -243,6 +310,15 @@ def apply_sidebar_filters(
                 key=f"{k}tag_match",
             )
 
+        if NSFW in df_original.columns:
+            with st.expander("内容分级", expanded=False, icon=":material/shield:"):
+                nsfw_label = st.radio(
+                    "NSFW 内容", ("隐藏", "显示全部", "仅 NSFW"),
+                    key=f"{k}nsfw_mode",
+                )
+        else:
+            nsfw_label = "显示全部"
+
         with st.expander("排序", expanded=False, icon=":material/swap_vert:"):
             sort_choices = {
                 f"{date_column} · 新作优先": (date_column, False),
@@ -251,6 +327,13 @@ def apply_sidebar_filters(
                 "Bangumi 排名 · 前列优先": (RANK, True),
                 f"{date_column} · 经典优先": (date_column, True),
             }
+            if BAYESIAN_SCORE in df_original.columns:
+                sort_choices = {
+                    "综合评分 · 可信优先": (BAYESIAN_SCORE, False),
+                    **sort_choices,
+                }
+            if FAVORITE in df_original.columns:
+                sort_choices["收藏人数 · 人气优先"] = (FAVORITE, False)
             sort_label = st.selectbox(
                 "排序方式", tuple(sort_choices), key=f"{k}sort",
             )
@@ -273,11 +356,15 @@ def apply_sidebar_filters(
         minimum_votes=int(minimum_votes),
         tags=selected_tags,
         tag_match="all" if tag_match_label == "同时满足" else "any",
+        include_unknown_dates=include_unknown_dates,
+        nsfw_mode={"隐藏": "hide", "显示全部": "all", "仅 NSFW": "only"}[nsfw_label],
         sort_by=sort_by,
         ascending=ascending,
     )
     result, preset_labels = apply_quick_preset(result, preset or "全部作品", date_column)
-    result = result.sort_values(sort_by, ascending=ascending, kind="stable").reset_index(drop=True)
+    result = result.sort_values(
+        sort_by, ascending=ascending, kind="stable", na_position="last"
+    ).reset_index(drop=True)
 
     labels = list(preset_labels)
     if search_term.strip():
@@ -288,6 +375,10 @@ def apply_sidebar_filters(
         labels.append(f"评分 {score_range[0]:.1f}–{score_range[1]:.1f}")
     if minimum_votes:
         labels.append(f"至少 {minimum_votes:,} 人评分")
+    if include_unknown_dates:
+        labels.append("包含日期未知")
+    if nsfw_label != "显示全部":
+        labels.append(f"NSFW：{nsfw_label}")
     if selected_tags:
         joiner = " 且 " if tag_match_label == "同时满足" else " 或 "
         labels.append("标签：" + joiner.join(selected_tags))
@@ -320,8 +411,9 @@ def render_overview(
     columns[3].metric(
         "时间跨度",
         (
-            f"{df_filtered[date_column].min().year}–{df_filtered[date_column].max().year}"
-            if not df_filtered.empty
+            f"{df_filtered[date_column].dropna().min().year}–"
+            f"{df_filtered[date_column].dropna().max().year}"
+            if not df_filtered[date_column].dropna().empty
             else "—"
         ),
     )
@@ -368,9 +460,13 @@ def render_table(
         st.info("没有符合当前条件的作品，请放宽筛选条件。")
         return
 
-    display_columns = [RANK, NAME_CN, NAME, date_column, SCORE, SCORE_TOTAL, TAGS, LINK]
+    display_columns = [
+        RANK, NAME_CN, NAME, date_column, RELEASE_STATUS, SCORE,
+        BAYESIAN_SCORE, SCORE_CONFIDENCE, SCORE_TOTAL, FAVORITE,
+        TAGS, USER_TAGS, LINK,
+    ]
     display = df_sorted.copy()
-    display[date_column] = display[date_column].dt.strftime("%Y-%m-%d")
+    display[date_column] = display[date_column].dt.strftime("%Y-%m-%d").fillna("未知")
 
     st.subheader(f"筛选结果（{len(display):,} {unit}）")
     st.dataframe(
@@ -378,7 +474,9 @@ def render_table(
         column_config={
             LINK: st.column_config.LinkColumn("链接", display_text="打开 Bangumi"),
             SCORE: st.column_config.NumberColumn(SCORE, format="%.1f"),
+            BAYESIAN_SCORE: st.column_config.NumberColumn("综合分", format="%.2f"),
             SCORE_TOTAL: st.column_config.NumberColumn(SCORE_TOTAL, format="%d"),
+            FAVORITE: st.column_config.NumberColumn(FAVORITE, format="%d"),
         },
         hide_index=True,
         width="stretch",

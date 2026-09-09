@@ -7,6 +7,7 @@
 from __future__ import annotations
 
 import argparse
+from datetime import date
 import subprocess
 from pathlib import Path
 from typing import Sequence
@@ -17,20 +18,35 @@ from config import (
     ANIME_CLEANED_FILE,
     BANGUMI_APP_DATA_DIR,
     BANGUMI_DUMP_DIR,
+    DATA_QUALITY_REPORT_FILE,
     GAME_CLEANED_FILE,
     JSONL_FILE_NAME,
     PROJECT_ROOT,
 )
 from get_source import (
     DATE_COLUMN_NAME,
-    EXCEL_DATE_FORMAT,
-    apply_excel_date_format,
     export_to_excel,
     process_subject_data,
+    write_quality_report,
 )
 
 
-REQUIRED_COLUMNS = {"id", "name", "name_cn", "date", "score", "score_total", "rank"}
+REQUIRED_COLUMNS = {
+    "id", "name", "name_cn", "date", "release_status", "meta_tags",
+    "user_tags", "score", "score_total", "rank", "favorite",
+    "favorite_wish", "favorite_done", "favorite_doing", "favorite_on_hold",
+    "favorite_dropped", "nsfw",
+    "bayesian_score", "score_confidence",
+}
+VALID_RELEASE_STATUSES = {"released", "upcoming", "unknown_date"}
+VALID_SCORE_CONFIDENCE = {"low", "medium", "high"}
+
+
+def _parse_cli_date(value: str) -> date:
+    try:
+        return date.fromisoformat(value)
+    except ValueError as exc:
+        raise argparse.ArgumentTypeError("日期必须使用 YYYY-MM-DD 格式") from exc
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,6 +69,12 @@ def build_parser() -> argparse.ArgumentParser:
         help="同时把生成文件写入归档目录",
     )
     parser.add_argument(
+        "--as-of-date",
+        type=_parse_cli_date,
+        default=date.today(),
+        help="用于区分已发行和未来作品的基准日期（YYYY-MM-DD）",
+    )
+    parser.add_argument(
         "--publish",
         action="store_true",
         help="生成成功后提交并推送输出文件（默认不执行 Git 写操作）",
@@ -68,15 +90,52 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def validate_workbook(path: Path) -> None:
-    """确认生成文件可读、非空且包含页面依赖的所有字段。"""
+    """验证生成文件的结构、唯一性、取值范围和跨字段一致性。"""
     data = pd.read_excel(path, engine="openpyxl")
     missing = REQUIRED_COLUMNS - set(data.columns)
     if missing:
         raise ValueError(f"{path.name} 缺少字段：{', '.join(sorted(missing))}")
     if data.empty:
         raise ValueError(f"{path.name} 没有数据行")
-    if pd.to_datetime(data[DATE_COLUMN_NAME], errors="coerce").isna().all():
-        raise ValueError(f"{path.name} 的日期列全部无效")
+    if data["id"].isna().any() or (data["id"] <= 0).any():
+        raise ValueError(f"{path.name} 存在无效 ID")
+    if data["id"].duplicated().any():
+        raise ValueError(f"{path.name} 存在重复 ID")
+    if (data["name"].fillna("").astype(str).str.strip() == "").any():
+        raise ValueError(f"{path.name} 存在空名称")
+    if data["rank"].isna().any() or (data["rank"] <= 0).any():
+        raise ValueError(f"{path.name} 存在无效榜单排名")
+    if data["score"].isna().any() or not data["score"].between(0.01, 10).all():
+        raise ValueError(f"{path.name} 存在无效评分")
+    if data["score_total"].isna().any() or (data["score_total"] <= 0).any():
+        raise ValueError(f"{path.name} 存在无效评分人数")
+    if data["bayesian_score"].isna().any() or not data["bayesian_score"].between(0, 10).all():
+        raise ValueError(f"{path.name} 存在无效综合评分")
+    if data["favorite"].isna().any() or (data["favorite"] < 0).any():
+        raise ValueError(f"{path.name} 存在无效收藏人数")
+    favorite_columns = [
+        "favorite_wish", "favorite_done", "favorite_doing",
+        "favorite_on_hold", "favorite_dropped",
+    ]
+    if data[favorite_columns].isna().any().any() or (data[favorite_columns] < 0).any().any():
+        raise ValueError(f"{path.name} 存在无效收藏状态计数")
+    if not data[favorite_columns].sum(axis=1).eq(data["favorite"]).all():
+        raise ValueError(f"{path.name} 的收藏总数与状态计数不一致")
+    if data["score_confidence"].isna().any() or not set(
+        data["score_confidence"]
+    ).issubset(VALID_SCORE_CONFIDENCE):
+        raise ValueError(f"{path.name} 存在无效评分可信度")
+    if data["release_status"].isna().any() or not set(
+        data["release_status"]
+    ).issubset(VALID_RELEASE_STATUSES):
+        raise ValueError(f"{path.name} 存在无效发行状态")
+    if data["nsfw"].isna().any() or not data["nsfw"].isin([True, False, 0, 1]).all():
+        raise ValueError(f"{path.name} 存在无效内容分级")
+
+    parsed_dates = pd.to_datetime(data[DATE_COLUMN_NAME], errors="coerce")
+    unknown_dates = data["release_status"] == "unknown_date"
+    if parsed_dates[~unknown_dates].isna().any() or parsed_dates[unknown_dates].notna().any():
+        raise ValueError(f"{path.name} 的日期与发行状态不一致")
 
 
 def _run_git(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -125,7 +184,11 @@ def publish_files(
 
 
 def generate_files(
-    dump_dir: Path, output_dir: Path, *, also_save_to_dump: bool = False
+    dump_dir: Path,
+    output_dir: Path,
+    *,
+    also_save_to_dump: bool = False,
+    as_of_date: date | None = None,
 ) -> list[Path]:
     dump_dir = dump_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
@@ -134,8 +197,10 @@ def generate_files(
         raise FileNotFoundError(f"未找到 {jsonl_path}")
 
     print(f"读取归档：{jsonl_path}")
-    anime_data, game_data = process_subject_data(jsonl_path)
-    if anime_data is None or game_data is None:
+    anime_data, game_data, quality_report = process_subject_data(
+        jsonl_path, as_of_date=as_of_date, return_report=True
+    )
+    if anime_data is None or game_data is None or quality_report is None:
         raise RuntimeError("归档读取失败")
     if not anime_data or not game_data:
         raise ValueError("动画或游戏数据为空，已停止写入")
@@ -153,11 +218,13 @@ def generate_files(
         for records, path, sheet_name in targets:
             if not export_to_excel(records, path, sheet_name):
                 raise RuntimeError(f"写入失败：{path}")
-            if not apply_excel_date_format(path, DATE_COLUMN_NAME, EXCEL_DATE_FORMAT):
-                raise RuntimeError(f"日期格式化失败：{path}")
             validate_workbook(path)
             generated.append(path)
             print(f"[OK] 已验证：{path}")
+        report_path = directory / DATA_QUALITY_REPORT_FILE
+        if not write_quality_report(quality_report, report_path):
+            raise RuntimeError(f"质量报告写入失败：{report_path}")
+        generated.append(report_path)
     return generated
 
 
@@ -168,6 +235,7 @@ def run(argv: Sequence[str] | None = None) -> int:
             args.dump_dir,
             args.output_dir,
             also_save_to_dump=args.also_save_to_dump,
+            as_of_date=args.as_of_date,
         )
         if args.publish:
             primary_output = args.output_dir.expanduser().resolve()

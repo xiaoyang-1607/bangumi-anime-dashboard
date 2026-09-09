@@ -48,12 +48,12 @@ jobs:
           python -m compileall -q app.py config.py get_source.py main.py ranking_ui.py ui.py update_data.py pages views tests
       - name: Commit changed datasets
         run: |
-          if [ -z "$(git status --porcelain -- anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json)" ]; then
+          if [ -z "$(git status --porcelain -- anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json data_quality_report.json)" ]; then
             echo "No data changes"
             exit 0
           fi
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json
+          git add anime_cleaned.xlsx game_cleaned.xlsx data_metadata.json data_quality_report.json
           git commit -m "chore(data): update Bangumi archive"
           git push origin HEAD:main
