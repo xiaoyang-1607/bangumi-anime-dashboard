@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
-from config import ANIME_CLEANED_FILE, BANGUMI_APP_DATA_DIR
+from config import ANIME_PARQUET_FILE, BANGUMI_APP_DATA_DIR
 from ranking_ui import (
     apply_sidebar_filters,
     load_data_or_upload,
@@ -18,7 +18,7 @@ from ranking_ui import (
 from ui import render_filter_chips, render_page_header, render_sidebar_brand
 
 DATE_COLUMN = "开播日期"
-DEFAULT_PATH = BANGUMI_APP_DATA_DIR / ANIME_CLEANED_FILE
+DEFAULT_PATH = BANGUMI_APP_DATA_DIR / ANIME_PARQUET_FILE
 
 render_sidebar_brand("动画筛选")
 render_page_header(
@@ -27,7 +27,7 @@ render_page_header(
     "从年代、口碑、热度与标签切入，快速收敛到你真正感兴趣的作品。",
 )
 
-original = load_data_or_upload(DEFAULT_PATH, "上传 anime_cleaned.xlsx", DATE_COLUMN)
+original = load_data_or_upload(DEFAULT_PATH, "上传动画榜单", DATE_COLUMN)
 filtered = apply_sidebar_filters(
     original,
     DATE_COLUMN,

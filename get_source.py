@@ -388,6 +388,23 @@ def export_to_excel(data_list, output_path: str | Path, sheet_name: str) -> bool
         return False
 
 
+def export_to_parquet(data_list, output_path: str | Path) -> bool:
+    """写入供应用直接读取的类型化 Parquet 数据。"""
+    path = Path(output_path)
+    if not data_list:
+        print(f"[WARN] {path.name} 没有可导出的数据")
+        return False
+    try:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        data = pd.DataFrame(data_list)
+        data[DATE_COLUMN_NAME] = pd.to_datetime(data[DATE_COLUMN_NAME], errors="coerce")
+        data.to_parquet(path, engine="pyarrow", compression="zstd", index=False)
+        return True
+    except (OSError, ValueError, ImportError) as exc:
+        print(f"[ERROR] 无法导出 {path}：{exc}")
+        return False
+
+
 def write_quality_report(report: dict[str, Any], output_path: str | Path) -> bool:
     path = Path(output_path)
     try:

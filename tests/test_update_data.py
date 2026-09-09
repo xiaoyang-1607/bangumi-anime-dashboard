@@ -80,6 +80,8 @@ class DataUpdaterTests(unittest.TestCase):
         fetch_latest_asset.return_value = asset
         with TemporaryDirectory() as directory:
             root = Path(directory)
+            (root / "anime_cleaned.parquet").touch()
+            (root / "game_cleaned.parquet").touch()
             (root / "anime_cleaned.xlsx").touch()
             (root / "game_cleaned.xlsx").touch()
             (root / "data_quality_report.json").touch()

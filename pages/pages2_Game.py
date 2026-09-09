@@ -7,7 +7,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import streamlit as st
 
-from config import BANGUMI_APP_DATA_DIR, GAME_CLEANED_FILE
+from config import BANGUMI_APP_DATA_DIR, GAME_PARQUET_FILE
 from ranking_ui import (
     apply_sidebar_filters,
     load_data_or_upload,
@@ -18,7 +18,7 @@ from ranking_ui import (
 from ui import render_filter_chips, render_page_header, render_sidebar_brand
 
 DATE_COLUMN = "发行日期"
-DEFAULT_PATH = BANGUMI_APP_DATA_DIR / GAME_CLEANED_FILE
+DEFAULT_PATH = BANGUMI_APP_DATA_DIR / GAME_PARQUET_FILE
 
 render_sidebar_brand("游戏筛选")
 render_page_header(
@@ -27,7 +27,7 @@ render_page_header(
     "在不同年代与类型中比较口碑和热度，发现被错过的佳作与长青经典。",
 )
 
-original = load_data_or_upload(DEFAULT_PATH, "上传 game_cleaned.xlsx", DATE_COLUMN)
+original = load_data_or_upload(DEFAULT_PATH, "上传游戏榜单", DATE_COLUMN)
 filtered = apply_sidebar_filters(
     original,
     DATE_COLUMN,

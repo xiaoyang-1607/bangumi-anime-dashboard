@@ -1,16 +1,16 @@
 import pandas as pd
 
-from config import BANGUMI_DUMP_DIR
+from config import ANIME_PARQUET_FILE, BANGUMI_APP_DATA_DIR, GAME_PARQUET_FILE
 
-# 数据目录：可通过环境变量 BANGUMI_DUMP_DIR 覆盖
-folder_path = BANGUMI_DUMP_DIR
-file_names = ['game_cleaned.xlsx', 'anime_cleaned.xlsx']
+# 应用数据目录：可通过环境变量 BANGUMI_APP_DATA_DIR 覆盖
+folder_path = BANGUMI_APP_DATA_DIR
+file_names = [GAME_PARQUET_FILE, ANIME_PARQUET_FILE]
 
 for file_name in file_names:
     file_path = folder_path / file_name
 
     if file_path.exists():
-        df = pd.read_excel(file_path)
+        df = pd.read_parquet(file_path, engine="pyarrow")
 
         # 1. 转换日期并提取年月 (不再进行 score_total >= 100 的筛选)
         df['date_dt'] = pd.to_datetime(df['date'], errors='coerce')
@@ -55,7 +55,7 @@ for file_name in file_names:
         result = result.drop(columns=['date_dt', 'year_month'])
 
         # 7. 保存文件
-        output_path = folder_path / f'monthly_best_{file_name}'
+        output_path = folder_path / f"monthly_best_{file_path.stem}.xlsx"
         result.to_excel(output_path, index=False)
 
         print(f"处理完成: {file_name}，共保留了 {len(result)} 个连续月份。")

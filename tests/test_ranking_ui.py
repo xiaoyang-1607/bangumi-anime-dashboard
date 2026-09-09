@@ -13,6 +13,7 @@ from ranking_ui import (
     available_tags,
     filter_dataframe,
     load_from_dataframe,
+    month_range_bounds,
 )
 
 
@@ -99,6 +100,25 @@ class RankingDataTests(unittest.TestCase):
             ascending=True,
         )
         self.assertEqual(result[RANK].tolist(), [20, 120])
+
+    def test_month_range_includes_the_entire_end_month(self):
+        start_date, end_date = month_range_bounds("2024-01", "2024-12")
+        self.assertEqual(start_date, date(2024, 1, 1))
+        self.assertEqual(end_date, date(2024, 12, 31))
+
+        result = filter_dataframe(
+            self.data,
+            date_column="开播日期",
+            start_date=start_date,
+            end_date=end_date,
+            sort_by=RANK,
+            ascending=True,
+        )
+        self.assertEqual(result[RANK].tolist(), [20, 120])
+
+    def test_rejects_reversed_month_range(self):
+        with self.assertRaisesRegex(ValueError, "起始月份"):
+            month_range_bounds("2024-12", "2024-01")
 
     def test_unknown_dates_and_nsfw_are_explicit_filters(self):
         hidden = filter_dataframe(

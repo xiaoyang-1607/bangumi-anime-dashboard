@@ -45,10 +45,12 @@ BANGUMI_APP_DATA_DIR = _configured_path("BANGUMI_APP_DATA_DIR", PROJECT_ROOT)
 JSONL_FILE_NAME = "subject.jsonlines"
 ANIME_CLEANED_FILE = "anime_cleaned.xlsx"
 GAME_CLEANED_FILE = "game_cleaned.xlsx"
+ANIME_PARQUET_FILE = "anime_cleaned.parquet"
+GAME_PARQUET_FILE = "game_cleaned.parquet"
 DATA_METADATA_FILE = "data_metadata.json"
 DATA_QUALITY_REPORT_FILE = "data_quality_report.json"
 
 DATA_FILES = {
-    "动画": ANIME_CLEANED_FILE,
-    "游戏": GAME_CLEANED_FILE,
+    "动画": ANIME_PARQUET_FILE,
+    "游戏": GAME_PARQUET_FILE,
 }

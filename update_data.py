@@ -22,10 +22,12 @@ import pandas as pd
 
 from config import (
     ANIME_CLEANED_FILE,
+    ANIME_PARQUET_FILE,
     BANGUMI_APP_DATA_DIR,
     DATA_METADATA_FILE,
     DATA_QUALITY_REPORT_FILE,
     GAME_CLEANED_FILE,
+    GAME_PARQUET_FILE,
     JSONL_FILE_NAME,
 )
 from main import generate_files
@@ -187,6 +189,8 @@ def read_metadata(path: Path) -> dict[str, Any]:
 
 
 def _record_count(path: Path) -> int:
+    if path.suffix.casefold() == ".parquet":
+        return len(pd.read_parquet(path, engine="pyarrow", columns=["id"]))
     return len(pd.read_excel(path, engine="openpyxl", usecols=["id"]))
 
 
@@ -220,6 +224,8 @@ def update_latest_data(
     latest = fetch_latest_asset(api_url, token)
     current = read_metadata(metadata_path)
     required_files = [
+        output_dir / ANIME_PARQUET_FILE,
+        output_dir / GAME_PARQUET_FILE,
         output_dir / ANIME_CLEANED_FILE,
         output_dir / GAME_CLEANED_FILE,
         output_dir / DATA_QUALITY_REPORT_FILE,
@@ -247,12 +253,14 @@ def update_latest_data(
         )
         generated_by_name = {path.name: path for path in generated}
         new_counts = {
-            "anime_records": _record_count(generated_by_name[ANIME_CLEANED_FILE]),
-            "game_records": _record_count(generated_by_name[GAME_CLEANED_FILE]),
+            "anime_records": _record_count(generated_by_name[ANIME_PARQUET_FILE]),
+            "game_records": _record_count(generated_by_name[GAME_PARQUET_FILE]),
         }
         if not force:
             validate_record_count_change(current, new_counts)
         for name in (
+            ANIME_PARQUET_FILE,
+            GAME_PARQUET_FILE,
             ANIME_CLEANED_FILE,
             GAME_CLEANED_FILE,
             DATA_QUALITY_REPORT_FILE,
@@ -267,8 +275,9 @@ def update_latest_data(
         "archive_updated_at": latest.updated_at,
         "pipeline_version": PIPELINE_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
-        "anime_records": _record_count(output_dir / ANIME_CLEANED_FILE),
-        "game_records": _record_count(output_dir / GAME_CLEANED_FILE),
+        "anime_records": _record_count(output_dir / ANIME_PARQUET_FILE),
+        "game_records": _record_count(output_dir / GAME_PARQUET_FILE),
+        "app_data_files": [ANIME_PARQUET_FILE, GAME_PARQUET_FILE],
         "quality_report": DATA_QUALITY_REPORT_FILE,
     }
     temporary_metadata = metadata_path.with_suffix(".json.tmp")

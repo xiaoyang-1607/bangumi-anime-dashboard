@@ -11,11 +11,11 @@
 - 首页收录量、评分人次和高口碑作品概览
 - 当前筛选结果的指标、年份分布和热门标签分析
 - 高分、热门、冷门佳作、近三年等快捷场景筛选
-- 高级筛选表单、标签“全部/任一”匹配、条件反馈与一键重置
+- 月份范围筛选、高级筛选表单、标签“全部/任一”匹配、条件反馈与一键重置
 - 日期未知作品可选择纳入筛选；NSFW 内容默认隐藏并可显式切换
 - 原始评分与兼顾样本量的综合评分并列展示，同时标注评分可信度
 - Bangumi 详情链接与当前结果 CSV 下载
-- 本地文件优先，也可在页面上传标准 xlsx
+- Parquet 快速读取优先，也可上传 Parquet 或 XLSX
 - 数据生成、严格校验、质量报告与发布分离；默认不会自动提交或推送
 - 每周自动检查最新 Bangumi Archive，仅在数据变化时提交新榜单
 
@@ -34,7 +34,7 @@ streamlit run app.py
 
 macOS / Linux 激活虚拟环境时使用 `source .venv/bin/activate`。
 
-仓库根目录已经包含 `anime_cleaned.xlsx` 与 `game_cleaned.xlsx`，因此启动后可以直接浏览。
+仓库根目录包含应用直接读取的 `anime_cleaned.parquet`、`game_cleaned.parquet`，并保留相应 XLSX 供人工查看和兼容使用，因此启动后可以直接浏览。
 
 ## 更新数据
 
@@ -91,7 +91,7 @@ python update_data.py --force
 `.github/workflows/update-data.yml` 每周三 00:30 UTC（北京时间 08:30）自动执行，也可以在 GitHub Actions 页面手动运行。流程会：
 
 1. 获取最新 `dump-*.zip`；
-2. 生成并校验动画、游戏 Excel 和 `data_quality_report.json`；
+2. 生成并校验动画、游戏 Parquet、兼容 XLSX 和 `data_quality_report.json`；
 3. 运行全部回归测试；
 4. 只有数据发生变化时才提交并推送 `main`。
 
@@ -99,7 +99,7 @@ python update_data.py --force
 
 ## 数据格式
 
-项目生成的 Excel 包含以下核心字段：
+项目生成的 Parquet 和 XLSX 包含以下核心字段：
 
 | 字段 | 含义 |
 | --- | --- |
@@ -116,6 +116,8 @@ python update_data.py --force
 | `score_confidence` | 按评分人数划分的低、中、高可信度 |
 
 页面仍兼容只含基础字段的旧版上传文件；缺少必要列时会直接显示可操作的错误提示。
+
+应用运行时以 Parquet 为主数据源，以保留日期、布尔值和数值类型并减少冷启动解析开销；XLSX 不再承担应用数据库职责，只用于人工查看、上传兼容和外部交换。日期原值仍精确到日，但界面筛选采用 `YYYY-MM` 月份范围，并完整包含结束月份。
 
 ### 清洗与榜单准入
 
@@ -134,7 +136,7 @@ python update_data.py --force
 | `ui.py` | 统一视觉主题、页头、侧边栏品牌与筛选条件标签 |
 | `main.py` | 可配置的数据生成、校验与可选发布 CLI |
 | `update_data.py` | 最新归档发现、流式下载、选择性解压与幂等更新 |
-| `get_source.py` | JSONL 流式标准化、榜单准入、质量报告与 Excel 导出 |
+| `get_source.py` | JSONL 流式标准化、榜单准入、质量报告及 Parquet/XLSX 导出 |
 | `config.py` | `.env` / 系统环境变量配置 |
 | `tests/` | 数据处理与筛选回归测试 |
 
@@ -142,7 +144,7 @@ python update_data.py --force
 
 ```bash
 python -m unittest discover -s tests -v
-python -m compileall -q app.py config.py get_source.py main.py ranking_ui.py update_data.py pages tests
+python -m compileall -q app.py best.py config.py get_source.py main.py ranking_ui.py ui.py update_data.py pages views tests
 ```
 
 GitHub Actions 会在 Python 3.10 与 3.12 上执行相同检查。

@@ -8,6 +8,7 @@ import pandas as pd
 from get_source import (
     apply_excel_date_format,
     export_to_excel,
+    export_to_parquet,
     process_subject_data,
 )
 
@@ -138,6 +139,20 @@ class ArchiveProcessingTests(unittest.TestCase):
             output = Path(directory) / "legacy.xlsx"
             self.assertTrue(export_to_excel(records, output, "Subjects"))
             self.assertTrue(apply_excel_date_format(output, "date", "yyyy-mm-dd"))
+
+    def test_parquet_export_preserves_types_and_missing_dates(self):
+        records = [
+            {"id": 1, "date": "2024-02-03", "nsfw": False},
+            {"id": 2, "date": None, "nsfw": True},
+        ]
+        with TemporaryDirectory() as directory:
+            output = Path(directory) / "data.parquet"
+            self.assertTrue(export_to_parquet(records, output))
+            loaded = pd.read_parquet(output, engine="pyarrow")
+
+        self.assertTrue(pd.api.types.is_datetime64_any_dtype(loaded["date"]))
+        self.assertTrue(pd.api.types.is_bool_dtype(loaded["nsfw"]))
+        self.assertTrue(pd.isna(loaded.loc[1, "date"]))
 
 
 if __name__ == "__main__":

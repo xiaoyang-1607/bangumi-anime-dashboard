@@ -5,7 +5,7 @@ from __future__ import annotations
 import pandas as pd
 import streamlit as st
 
-from config import ANIME_CLEANED_FILE, BANGUMI_APP_DATA_DIR, GAME_CLEANED_FILE
+from config import ANIME_PARQUET_FILE, BANGUMI_APP_DATA_DIR, GAME_PARQUET_FILE
 from ranking_ui import LINK, NAME_CN, RANK, SCORE, SCORE_TOTAL, load_from_path
 from ui import format_archive_date, load_data_metadata, render_sidebar_brand
 
@@ -34,8 +34,8 @@ def _try_load(file_name: str, date_name: str) -> pd.DataFrame | None:
 
 
 datasets = {
-    "动画": _try_load(ANIME_CLEANED_FILE, "开播日期"),
-    "游戏": _try_load(GAME_CLEANED_FILE, "发行日期"),
+    "动画": _try_load(ANIME_PARQUET_FILE, "开播日期"),
+    "游戏": _try_load(GAME_PARQUET_FILE, "发行日期"),
 }
 available = {name: data for name, data in datasets.items() if data is not None}
 metadata = load_data_metadata()
@@ -90,7 +90,7 @@ if available:
         width="stretch",
     )
 else:
-    st.info("尚未找到榜单数据。请运行 `python update_data.py`，或进入榜单页面上传 xlsx。")
+    st.info("尚未找到榜单数据。请运行 `python update_data.py`，或进入榜单页面上传数据文件。")
 
 with st.sidebar.expander("关于数据", expanded=False):
     st.caption(

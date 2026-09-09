@@ -25,6 +25,9 @@ class StreamlitUiSmokeTests(unittest.TestCase):
                 self.assertEqual(len(app.tabs), 2)
                 self.assertEqual(len(app.dataframe), 1)
                 self.assertEqual(len(app.get("download_button")), 1)
+                self.assertEqual(len(app.date_input), 0)
+                self.assertIn("起始月份", [widget.label for widget in app.selectbox])
+                self.assertIn("结束月份", [widget.label for widget in app.selectbox])
                 self.assertIn("找到", app.success[0].value)
 
     def test_quick_filter_and_reset_update_result_count(self):

@@ -16,16 +16,19 @@ import pandas as pd
 
 from config import (
     ANIME_CLEANED_FILE,
+    ANIME_PARQUET_FILE,
     BANGUMI_APP_DATA_DIR,
     BANGUMI_DUMP_DIR,
     DATA_QUALITY_REPORT_FILE,
     GAME_CLEANED_FILE,
+    GAME_PARQUET_FILE,
     JSONL_FILE_NAME,
     PROJECT_ROOT,
 )
 from get_source import (
     DATE_COLUMN_NAME,
     export_to_excel,
+    export_to_parquet,
     process_subject_data,
     write_quality_report,
 )
@@ -50,7 +53,9 @@ def _parse_cli_date(value: str) -> date:
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="从 Bangumi Archive 生成榜单 Excel")
+    parser = argparse.ArgumentParser(
+        description="从 Bangumi Archive 生成 Parquet 与 XLSX 榜单"
+    )
     parser.add_argument(
         "--dump-dir",
         type=Path,
@@ -89,53 +94,68 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
-def validate_workbook(path: Path) -> None:
-    """验证生成文件的结构、唯一性、取值范围和跨字段一致性。"""
-    data = pd.read_excel(path, engine="openpyxl")
+def validate_dataframe(data: pd.DataFrame, source_name: str) -> None:
+    """验证数据结构、唯一性、取值范围和跨字段一致性。"""
     missing = REQUIRED_COLUMNS - set(data.columns)
     if missing:
-        raise ValueError(f"{path.name} 缺少字段：{', '.join(sorted(missing))}")
+        raise ValueError(f"{source_name} 缺少字段：{', '.join(sorted(missing))}")
     if data.empty:
-        raise ValueError(f"{path.name} 没有数据行")
+        raise ValueError(f"{source_name} 没有数据行")
     if data["id"].isna().any() or (data["id"] <= 0).any():
-        raise ValueError(f"{path.name} 存在无效 ID")
+        raise ValueError(f"{source_name} 存在无效 ID")
     if data["id"].duplicated().any():
-        raise ValueError(f"{path.name} 存在重复 ID")
+        raise ValueError(f"{source_name} 存在重复 ID")
     if (data["name"].fillna("").astype(str).str.strip() == "").any():
-        raise ValueError(f"{path.name} 存在空名称")
+        raise ValueError(f"{source_name} 存在空名称")
     if data["rank"].isna().any() or (data["rank"] <= 0).any():
-        raise ValueError(f"{path.name} 存在无效榜单排名")
+        raise ValueError(f"{source_name} 存在无效榜单排名")
     if data["score"].isna().any() or not data["score"].between(0.01, 10).all():
-        raise ValueError(f"{path.name} 存在无效评分")
+        raise ValueError(f"{source_name} 存在无效评分")
     if data["score_total"].isna().any() or (data["score_total"] <= 0).any():
-        raise ValueError(f"{path.name} 存在无效评分人数")
+        raise ValueError(f"{source_name} 存在无效评分人数")
     if data["bayesian_score"].isna().any() or not data["bayesian_score"].between(0, 10).all():
-        raise ValueError(f"{path.name} 存在无效综合评分")
+        raise ValueError(f"{source_name} 存在无效综合评分")
     if data["favorite"].isna().any() or (data["favorite"] < 0).any():
-        raise ValueError(f"{path.name} 存在无效收藏人数")
+        raise ValueError(f"{source_name} 存在无效收藏人数")
     favorite_columns = [
         "favorite_wish", "favorite_done", "favorite_doing",
         "favorite_on_hold", "favorite_dropped",
     ]
     if data[favorite_columns].isna().any().any() or (data[favorite_columns] < 0).any().any():
-        raise ValueError(f"{path.name} 存在无效收藏状态计数")
+        raise ValueError(f"{source_name} 存在无效收藏状态计数")
     if not data[favorite_columns].sum(axis=1).eq(data["favorite"]).all():
-        raise ValueError(f"{path.name} 的收藏总数与状态计数不一致")
+        raise ValueError(f"{source_name} 的收藏总数与状态计数不一致")
     if data["score_confidence"].isna().any() or not set(
         data["score_confidence"]
     ).issubset(VALID_SCORE_CONFIDENCE):
-        raise ValueError(f"{path.name} 存在无效评分可信度")
+        raise ValueError(f"{source_name} 存在无效评分可信度")
     if data["release_status"].isna().any() or not set(
         data["release_status"]
     ).issubset(VALID_RELEASE_STATUSES):
-        raise ValueError(f"{path.name} 存在无效发行状态")
+        raise ValueError(f"{source_name} 存在无效发行状态")
     if data["nsfw"].isna().any() or not data["nsfw"].isin([True, False, 0, 1]).all():
-        raise ValueError(f"{path.name} 存在无效内容分级")
+        raise ValueError(f"{source_name} 存在无效内容分级")
 
     parsed_dates = pd.to_datetime(data[DATE_COLUMN_NAME], errors="coerce")
     unknown_dates = data["release_status"] == "unknown_date"
     if parsed_dates[~unknown_dates].isna().any() or parsed_dates[unknown_dates].notna().any():
-        raise ValueError(f"{path.name} 的日期与发行状态不一致")
+        raise ValueError(f"{source_name} 的日期与发行状态不一致")
+
+
+def validate_data_file(path: Path) -> None:
+    """读取并验证受支持的生成数据文件。"""
+    if path.suffix.casefold() == ".parquet":
+        data = pd.read_parquet(path, engine="pyarrow")
+    elif path.suffix.casefold() == ".xlsx":
+        data = pd.read_excel(path, engine="openpyxl")
+    else:
+        raise ValueError(f"不支持验证 {path.name}")
+    validate_dataframe(data, path.name)
+
+
+def validate_workbook(path: Path) -> None:
+    """兼容旧调用的 Excel 校验入口。"""
+    validate_data_file(path)
 
 
 def _run_git(arguments: Sequence[str]) -> subprocess.CompletedProcess[str]:
@@ -212,15 +232,28 @@ def generate_files(
     generated: list[Path] = []
     for directory in output_directories:
         targets = (
-            (anime_data, directory / ANIME_CLEANED_FILE, "Anime_Subjects"),
-            (game_data, directory / GAME_CLEANED_FILE, "Game_Subjects"),
+            (
+                anime_data,
+                directory / ANIME_PARQUET_FILE,
+                directory / ANIME_CLEANED_FILE,
+                "Anime_Subjects",
+            ),
+            (
+                game_data,
+                directory / GAME_PARQUET_FILE,
+                directory / GAME_CLEANED_FILE,
+                "Game_Subjects",
+            ),
         )
-        for records, path, sheet_name in targets:
-            if not export_to_excel(records, path, sheet_name):
-                raise RuntimeError(f"写入失败：{path}")
-            validate_workbook(path)
-            generated.append(path)
-            print(f"[OK] 已验证：{path}")
+        for records, parquet_path, excel_path, sheet_name in targets:
+            if not export_to_parquet(records, parquet_path):
+                raise RuntimeError(f"写入失败：{parquet_path}")
+            if not export_to_excel(records, excel_path, sheet_name):
+                raise RuntimeError(f"写入失败：{excel_path}")
+            for path in (parquet_path, excel_path):
+                validate_data_file(path)
+                generated.append(path)
+                print(f"[OK] 已验证：{path}")
         report_path = directory / DATA_QUALITY_REPORT_FILE
         if not write_quality_report(quality_report, report_path):
             raise RuntimeError(f"质量报告写入失败：{report_path}")

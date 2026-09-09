@@ -53,11 +53,15 @@ class PipelineCliTests(unittest.TestCase):
             report = json.loads(
                 (output_dir / "data_quality_report.json").read_text(encoding="utf-8")
             )
-            game = pd.read_excel(output_dir / "game_cleaned.xlsx", engine="openpyxl")
+            game = pd.read_parquet(output_dir / "game_cleaned.parquet", engine="pyarrow")
 
         self.assertEqual(
             names,
-            {"anime_cleaned.xlsx", "game_cleaned.xlsx", "data_quality_report.json"},
+            {
+                "anime_cleaned.parquet", "game_cleaned.parquet",
+                "anime_cleaned.xlsx", "game_cleaned.xlsx",
+                "data_quality_report.json",
+            },
         )
         self.assertEqual(report["output"]["total_records"], 2)
         self.assertEqual(game.loc[0, "release_status"], "unknown_date")

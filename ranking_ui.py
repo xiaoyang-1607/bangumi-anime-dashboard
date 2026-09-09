@@ -123,11 +123,33 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     return data[columns].reset_index(drop=True)
 
 
+def _read_tabular(source) -> pd.DataFrame:
+    name = getattr(source, "name", source)
+    suffix = Path(str(name)).suffix.casefold()
+    if suffix == ".parquet":
+        return pd.read_parquet(source, engine="pyarrow")
+    if suffix == ".xlsx":
+        return pd.read_excel(source, engine="openpyxl")
+    raise ValueError("仅支持 .parquet 或 .xlsx 数据文件")
+
+
 @st.cache_data(show_spinner="正在读取榜单数据…")
 def load_from_path(file_path: str, date_display_name: str) -> pd.DataFrame:
-    """从 Excel 文件加载并规范化榜单数据。"""
-    source = pd.read_excel(file_path, engine="openpyxl")
+    """从 Parquet 或 Excel 文件加载并规范化榜单数据。"""
+    source = _read_tabular(file_path)
     return load_from_dataframe(source, date_display_name)
+
+
+def month_range_bounds(start_month: str, end_month: str) -> tuple[date, date]:
+    """把包含首尾的 YYYY-MM 月份范围转换为日级过滤边界。"""
+    try:
+        start_period = pd.Period(start_month, freq="M")
+        end_period = pd.Period(end_month, freq="M")
+    except ValueError as exc:
+        raise ValueError("月份必须使用 YYYY-MM 格式") from exc
+    if start_period > end_period:
+        raise ValueError("起始月份不能晚于结束月份")
+    return start_period.start_time.date(), end_period.end_time.date()
 
 
 def available_tags(df: pd.DataFrame, limit: int = 80) -> list[str]:
@@ -227,13 +249,14 @@ def apply_quick_preset(
         latest_date = df[date_column].max()
         if pd.isna(latest_date):
             return df.iloc[0:0], ["近三年"]
-        cutoff = latest_date - pd.DateOffset(years=3)
-        return df[df[date_column] >= cutoff], [f"{cutoff.year} 年至今"]
+        latest_month = latest_date.to_period("M")
+        cutoff = (latest_month - 35).start_time
+        return df[df[date_column] >= cutoff], [f"{cutoff:%Y-%m} 至今"]
     raise ValueError(f"未知快捷筛选：{preset}")
 
 
 _FILTER_WIDGETS = (
-    "preset", "search", "dates", "score", "minimum_votes", "tags",
+    "preset", "search", "start_month", "end_month", "score", "minimum_votes", "tags",
     "tag_match", "sort", "include_unknown_dates", "nsfw_mode",
 )
 
@@ -267,10 +290,16 @@ def apply_sidebar_filters(
     )
     valid_dates = df_original[date_column].dropna()
     if valid_dates.empty:
-        minimum_date = maximum_date = date.today()
+        current_month = pd.Period(date.today(), freq="M")
+        minimum_month = maximum_month = str(current_month)
     else:
-        minimum_date = valid_dates.min().date()
-        maximum_date = valid_dates.max().date()
+        minimum_period = valid_dates.min().to_period("M")
+        maximum_period = valid_dates.max().to_period("M")
+        minimum_month = str(minimum_period)
+        maximum_month = str(maximum_period)
+    month_options = pd.period_range(
+        minimum_month, maximum_month, freq="M"
+    ).strftime("%Y-%m").tolist()
     minimum_score = float(df_original[SCORE].min())
     maximum_score = float(df_original[SCORE].max())
 
@@ -280,9 +309,15 @@ def apply_sidebar_filters(
             icon=":material/search:",
         )
         with st.expander("时间与评分", expanded=True, icon=":material/tune:"):
-            selected_dates = st.date_input(
-                "日期范围", value=(minimum_date, maximum_date),
-                min_value=minimum_date, max_value=maximum_date, key=f"{k}dates",
+            month_columns = st.columns(2)
+            selected_start_month = month_columns[0].selectbox(
+                "起始月份", month_options, index=0, key=f"{k}start_month"
+            )
+            selected_end_month = month_columns[1].selectbox(
+                "结束月份",
+                month_options,
+                index=len(month_options) - 1,
+                key=f"{k}end_month",
             )
             include_unknown_dates = st.checkbox(
                 "包含日期未知作品", value=False, key=f"{k}include_unknown_dates"
@@ -341,10 +376,16 @@ def apply_sidebar_filters(
             "应用高级筛选", type="primary", icon=":material/check:", width="stretch"
         )
 
-    if isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 2:
-        start_date, end_date = selected_dates
-    else:
-        start_date = end_date = selected_dates
+    invalid_month_range = False
+    try:
+        start_date, end_date = month_range_bounds(
+            selected_start_month, selected_end_month
+        )
+    except ValueError as exc:
+        invalid_month_range = True
+        st.sidebar.error(str(exc), icon=":material/calendar_month:")
+        start_date = pd.Period(selected_start_month, freq="M").start_time.date()
+        end_date = pd.Period(selected_end_month, freq="M").end_time.date()
     sort_by, ascending = sort_choices[sort_label]
     result = filter_dataframe(
         df_original,
@@ -362,6 +403,8 @@ def apply_sidebar_filters(
         ascending=ascending,
     )
     result, preset_labels = apply_quick_preset(result, preset or "全部作品", date_column)
+    if invalid_month_range:
+        result = result.iloc[0:0]
     result = result.sort_values(
         sort_by, ascending=ascending, kind="stable", na_position="last"
     ).reset_index(drop=True)
@@ -369,8 +412,8 @@ def apply_sidebar_filters(
     labels = list(preset_labels)
     if search_term.strip():
         labels.append(f"名称：{search_term.strip()}")
-    if start_date != minimum_date or end_date != maximum_date:
-        labels.append(f"{start_date:%Y-%m-%d} 至 {end_date:%Y-%m-%d}")
+    if selected_start_month != minimum_month or selected_end_month != maximum_month:
+        labels.append(f"{selected_start_month} 至 {selected_end_month}")
     if score_range != (minimum_score, maximum_score):
         labels.append(f"评分 {score_range[0]:.1f}–{score_range[1]:.1f}")
     if minimum_votes:
@@ -495,27 +538,30 @@ def load_data_or_upload(
     upload_label: str,
     date_display_name: str,
 ) -> pd.DataFrame:
-    """优先加载默认文件，失败时允许用户上传 Excel。"""
+    """优先加载默认 Parquet，兼容本地或上传的 Excel。"""
     data = None
-    if default_path.is_file():
+    local_path = default_path
+    if not local_path.is_file() and local_path.suffix.casefold() == ".parquet":
+        excel_fallback = local_path.with_suffix(".xlsx")
+        if excel_fallback.is_file():
+            local_path = excel_fallback
+    if local_path.is_file():
         try:
-            data = load_from_path(str(default_path), date_display_name)
+            data = load_from_path(str(local_path), date_display_name)
         except Exception as exc:  # Streamlit 需要把可操作错误展示给用户
             st.warning(f"读取本地数据失败：{exc}")
 
     if data is None or data.empty:
         uploaded = st.file_uploader(
             upload_label,
-            type=["xlsx"],
+            type=["parquet", "xlsx"],
             help="可使用 main.py 从 Bangumi 归档生成",
         )
         if uploaded is None:
-            st.info("请上传对应的 xlsx 数据文件。")
+            st.info("请上传对应的 Parquet 或 XLSX 数据文件。")
             st.stop()
         try:
-            data = load_from_dataframe(
-                pd.read_excel(uploaded, engine="openpyxl"), date_display_name
-            )
+            data = load_from_dataframe(_read_tabular(uploaded), date_display_name)
         except Exception as exc:
             st.error(f"解析上传文件失败：{exc}")
             st.stop()
