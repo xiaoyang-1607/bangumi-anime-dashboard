@@ -1,17 +1,24 @@
 import unittest
+from pathlib import Path
 
 from streamlit.testing.v1 import AppTest
 
 
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+
 class StreamlitUiSmokeTests(unittest.TestCase):
     def test_router_renders_overview(self):
-        app = AppTest.from_file("app.py").run(timeout=60)
+        app = AppTest.from_file(PROJECT_ROOT / "app.py").run(timeout=60)
         self.assertEqual(list(app.exception), [])
         self.assertEqual(app.metric[0].label, "收录作品")
         self.assertEqual(len(app.get("page_link")), 2)
 
     def test_ranking_pages_render_filters_tabs_and_table(self):
-        for path in ("pages/pages1_Anime.py", "pages/pages2_Game.py"):
+        for path in (
+            PROJECT_ROOT / "pages/pages1_Anime.py",
+            PROJECT_ROOT / "pages/pages2_Game.py",
+        ):
             with self.subTest(path=path):
                 app = AppTest.from_file(path).run(timeout=60)
                 self.assertEqual(list(app.exception), [])
@@ -21,7 +28,7 @@ class StreamlitUiSmokeTests(unittest.TestCase):
                 self.assertIn("找到", app.success[0].value)
 
     def test_quick_filter_and_reset_update_result_count(self):
-        app = AppTest.from_file("pages/pages1_Anime.py").run(timeout=60)
+        app = AppTest.from_file(PROJECT_ROOT / "pages/pages1_Anime.py").run(timeout=60)
         total = int(app.metric[0].value.replace(",", ""))
 
         app.selectbox[0].select("高分佳作")
