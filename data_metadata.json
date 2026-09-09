@@ -8,5 +8,9 @@
   "generated_at": "2026-09-09T15:42:46.905941+00:00",
   "anime_records": 10298,
   "game_records": 10728,
+  "app_data_files": [
+    "anime_cleaned.parquet",
+    "game_cleaned.parquet"
+  ],
   "quality_report": "data_quality_report.json"
 }
