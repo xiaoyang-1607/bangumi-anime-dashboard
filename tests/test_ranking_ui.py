@@ -8,6 +8,7 @@ from ranking_ui import (
     RANK,
     SCORE,
     TAGS,
+    apply_quick_preset,
     available_tags,
     filter_dataframe,
     load_from_dataframe,
@@ -93,6 +94,25 @@ class RankingDataTests(unittest.TestCase):
         self.assertEqual(result[NAME_CN].tolist(), ["阿尔法"])
         self.assertIn("原创", available_tags(self.data))
         self.assertIn(TAGS, self.data.columns)
+
+    def test_tag_filter_can_match_any_selected_tag(self):
+        result = filter_dataframe(
+            self.data,
+            date_column="开播日期",
+            tags=["科幻", "奇幻"],
+            tag_match="any",
+            sort_by=RANK,
+            ascending=True,
+        )
+        self.assertEqual(result[NAME_CN].tolist(), ["阿尔法", "Beta"])
+
+    def test_quick_presets_apply_expected_thresholds(self):
+        high_score, labels = apply_quick_preset(self.data, "高分佳作", "开播日期")
+        self.assertEqual(high_score[NAME_CN].tolist(), ["阿尔法", "硬科幻"])
+        self.assertIn("评分 ≥ 8.0", labels)
+
+        hidden_gems, _ = apply_quick_preset(self.data, "冷门佳作", "开播日期")
+        self.assertEqual(hidden_gems[NAME_CN].tolist(), ["阿尔法"])
 
 
 if __name__ == "__main__":

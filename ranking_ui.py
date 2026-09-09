@@ -5,7 +5,7 @@ from __future__ import annotations
 from collections import Counter
 from datetime import date
 from pathlib import Path
-from typing import Iterable, Sequence
+from typing import Iterable
 
 import pandas as pd
 import streamlit as st
@@ -43,6 +43,11 @@ def _tag_tokens(value: object) -> list[str]:
     if pd.isna(value):
         return []
     return [tag.strip() for tag in str(value).split(",") if tag.strip()]
+
+
+def _format_count(value: object) -> str:
+    """格式化人数；兼容 Streamlit 测试框架回传的已格式化字符串。"""
+    return f"{int(str(value).replace(',', '')):,}"
 
 
 def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFrame:
@@ -101,7 +106,9 @@ def filter_dataframe(
     end_date: date | pd.Timestamp | None = None,
     score_range: tuple[float, float] | None = None,
     minimum_votes: int = 0,
+    maximum_votes: int | None = None,
     tags: Iterable[str] = (),
+    tag_match: str = "all",
     sort_by: str = SCORE,
     ascending: bool = False,
 ) -> pd.DataFrame:
@@ -127,87 +134,136 @@ def filter_dataframe(
     if score_range is not None:
         result = result[result[SCORE].between(*score_range, inclusive="both")]
     result = result[result[SCORE_TOTAL] >= minimum_votes]
+    if maximum_votes is not None:
+        result = result[result[SCORE_TOTAL] <= maximum_votes]
 
     selected_tags = {tag.strip() for tag in tags if tag.strip()}
     if selected_tags and TAGS in result.columns:
-        result = result[
-            result[TAGS].map(lambda value: selected_tags.issubset(set(_tag_tokens(value))))
-        ]
+        if tag_match not in {"all", "any"}:
+            raise ValueError("tag_match 只支持 all 或 any")
+        result = result[result[TAGS].map(
+            lambda value: (
+                selected_tags.issubset(set(_tag_tokens(value)))
+                if tag_match == "all"
+                else bool(selected_tags.intersection(_tag_tokens(value)))
+            )
+        )]
 
     if sort_by not in result.columns:
         raise ValueError(f"无法按不存在的列排序：{sort_by}")
     return result.sort_values(sort_by, ascending=ascending, kind="stable").reset_index(drop=True)
 
 
+def apply_quick_preset(
+    df: pd.DataFrame, preset: str, date_column: str
+) -> tuple[pd.DataFrame, list[str]]:
+    """应用常用发现情景，返回结果和面向用户的条件说明。"""
+    if preset == "全部作品":
+        return df, []
+    if preset == "高分佳作":
+        return df[(df[SCORE] >= 8.0) & (df[SCORE_TOTAL] >= 1_000)], ["评分 ≥ 8.0", "评分人数 ≥ 1,000"]
+    if preset == "大众热门":
+        return df[df[SCORE_TOTAL] >= 10_000], ["评分人数 ≥ 10,000"]
+    if preset == "冷门佳作":
+        return df[(df[SCORE] >= 8.0) & df[SCORE_TOTAL].between(100, 2_000)], ["评分 ≥ 8.0", "100–2,000 人评分"]
+    if preset == "近三年":
+        cutoff = df[date_column].max() - pd.DateOffset(years=3)
+        return df[df[date_column] >= cutoff], [f"{cutoff.year} 年至今"]
+    raise ValueError(f"未知快捷筛选：{preset}")
+
+
+_FILTER_WIDGETS = (
+    "preset", "search", "dates", "score", "minimum_votes", "tags",
+    "tag_match", "sort",
+)
+
+
+def _reset_filter_widgets(prefix: str) -> None:
+    for suffix in _FILTER_WIDGETS:
+        st.session_state.pop(f"{prefix}{suffix}", None)
+
+
 def apply_sidebar_filters(
     df_original: pd.DataFrame,
     date_column: str,
-    sort_options: Sequence[str],
     key_prefix: str = "",
 ) -> pd.DataFrame:
-    """渲染侧边栏控件并返回筛选结果。"""
+    """渲染分组筛选器并返回结果；活跃条件写入 DataFrame.attrs。"""
     k = key_prefix
-    st.sidebar.header("筛选与排序")
-
-    search_term = st.sidebar.text_input(
-        "按名称搜索（中文 / 原名）", value="", key=f"{k}search"
+    st.sidebar.subheader("发现方式")
+    preset_options = {
+        "全部作品": "全部作品",
+        "高分佳作": "✨ 高分佳作",
+        "大众热门": "🔥 大众热门",
+        "冷门佳作": "💎 冷门佳作",
+        "近三年": "🆕 近三年",
+    }
+    preset = st.sidebar.selectbox(
+        "快捷筛选",
+        tuple(preset_options),
+        format_func=preset_options.get,
+        key=f"{k}preset",
+        width="stretch",
     )
-
     minimum_date = df_original[date_column].min().date()
     maximum_date = df_original[date_column].max().date()
-    selected_dates = st.sidebar.date_input(
-        "日期范围",
-        value=(minimum_date, maximum_date),
-        min_value=minimum_date,
-        max_value=maximum_date,
-        key=f"{k}dates",
-    )
+    minimum_score = float(df_original[SCORE].min())
+    maximum_score = float(df_original[SCORE].max())
+
+    with st.sidebar.form(f"{k}filter_form", border=False):
+        search_term = st.text_input(
+            "搜索作品", value="", placeholder="输入中文名或原名", key=f"{k}search",
+            icon=":material/search:",
+        )
+        with st.expander("时间与评分", expanded=True, icon=":material/tune:"):
+            selected_dates = st.date_input(
+                "日期范围", value=(minimum_date, maximum_date),
+                min_value=minimum_date, max_value=maximum_date, key=f"{k}dates",
+            )
+            score_range = st.slider(
+                "评分范围", minimum_score, maximum_score,
+                (minimum_score, maximum_score), step=0.1, key=f"{k}score",
+            )
+            vote_options = sorted(set(
+                [0, 100, 500, 1_000, 3_000, 5_000, 10_000]
+                + [int(df_original[SCORE_TOTAL].max())]
+            ))
+            minimum_votes = st.select_slider(
+                "最低评分人数", options=vote_options, value=0,
+                format_func=_format_count, key=f"{k}minimum_votes",
+            )
+
+        with st.expander("标签", expanded=False, icon=":material/label:"):
+            selected_tags = st.multiselect(
+                "作品标签", options=available_tags(df_original),
+                placeholder="选择热门标签", key=f"{k}tags",
+            )
+            tag_match_label = st.radio(
+                "多个标签", ("同时满足", "满足任一"), horizontal=True,
+                key=f"{k}tag_match",
+            )
+
+        with st.expander("排序", expanded=False, icon=":material/swap_vert:"):
+            sort_choices = {
+                f"{date_column} · 新作优先": (date_column, False),
+                "评分 · 高分优先": (SCORE, False),
+                "评分人数 · 热门优先": (SCORE_TOTAL, False),
+                "Bangumi 排名 · 前列优先": (RANK, True),
+                f"{date_column} · 经典优先": (date_column, True),
+            }
+            sort_label = st.selectbox(
+                "排序方式", tuple(sort_choices), key=f"{k}sort",
+            )
+        st.form_submit_button(
+            "应用高级筛选", type="primary", icon=":material/check:", width="stretch"
+        )
+
     if isinstance(selected_dates, (tuple, list)) and len(selected_dates) == 2:
         start_date, end_date = selected_dates
     else:
         start_date = end_date = selected_dates
-
-    minimum_score = float(df_original[SCORE].min())
-    maximum_score = float(df_original[SCORE].max())
-    score_range = st.sidebar.slider(
-        "评分范围",
-        minimum_score,
-        maximum_score,
-        (minimum_score, maximum_score),
-        step=0.1,
-        key=f"{k}score",
-    )
-    minimum_votes = st.sidebar.number_input(
-        "最少评分人数",
-        min_value=0,
-        max_value=int(df_original[SCORE_TOTAL].max()),
-        value=0,
-        step=100,
-        key=f"{k}minimum_votes",
-    )
-
-    tag_options = available_tags(df_original)
-    selected_tags = st.sidebar.multiselect(
-        "标签（同时满足）",
-        options=tag_options,
-        placeholder="选择一个或多个热门标签",
-        key=f"{k}tags",
-    )
-
-    sort_by = st.sidebar.selectbox("排序字段", sort_options, key=f"{k}sort")
-    default_direction = 1 if sort_by == RANK else 0
-    ascending = (
-        st.sidebar.radio(
-            "排序方向",
-            ("降序", "升序"),
-            index=default_direction,
-            horizontal=True,
-            key=f"{k}direction",
-        )
-        == "升序"
-    )
-
-    return filter_dataframe(
+    sort_by, ascending = sort_choices[sort_label]
+    result = filter_dataframe(
         df_original,
         date_column=date_column,
         search_term=search_term,
@@ -216,9 +272,33 @@ def apply_sidebar_filters(
         score_range=score_range,
         minimum_votes=int(minimum_votes),
         tags=selected_tags,
+        tag_match="all" if tag_match_label == "同时满足" else "any",
         sort_by=sort_by,
         ascending=ascending,
     )
+    result, preset_labels = apply_quick_preset(result, preset or "全部作品", date_column)
+    result = result.sort_values(sort_by, ascending=ascending, kind="stable").reset_index(drop=True)
+
+    labels = list(preset_labels)
+    if search_term.strip():
+        labels.append(f"名称：{search_term.strip()}")
+    if start_date != minimum_date or end_date != maximum_date:
+        labels.append(f"{start_date:%Y-%m-%d} 至 {end_date:%Y-%m-%d}")
+    if score_range != (minimum_score, maximum_score):
+        labels.append(f"评分 {score_range[0]:.1f}–{score_range[1]:.1f}")
+    if minimum_votes:
+        labels.append(f"至少 {minimum_votes:,} 人评分")
+    if selected_tags:
+        joiner = " 且 " if tag_match_label == "同时满足" else " 或 "
+        labels.append("标签：" + joiner.join(selected_tags))
+    result.attrs["active_filters"] = labels
+
+    st.sidebar.success(f"找到 {len(result):,} / {len(df_original):,} 条", icon=":material/filter_alt:")
+    st.sidebar.button(
+        "重置全部条件", icon=":material/restart_alt:", width="stretch",
+        on_click=_reset_filter_widgets, args=(k,),
+    )
+    return result
 
 
 def render_overview(
@@ -250,29 +330,31 @@ def render_overview(
 def render_insights(df_filtered: pd.DataFrame, date_column: str) -> None:
     """展示年份分布和热门标签两个轻量分析图。"""
     if df_filtered.empty:
+        st.info("暂无可分析的数据，请调整筛选条件。")
         return
 
-    with st.expander("数据洞察", expanded=False):
-        left, right = st.columns(2)
-        yearly = (
-            df_filtered.assign(年份=df_filtered[date_column].dt.year)
-            .groupby("年份", as_index=False)
-            .size()
-            .rename(columns={"size": "作品数"})
-            .tail(50)
-        )
-        left.caption("近 50 个有数据年份的作品数量")
-        left.bar_chart(yearly, x="年份", y="作品数", width="stretch", height=300)
+    left, right = st.columns(2)
+    yearly = (
+        df_filtered.assign(年份=df_filtered[date_column].dt.year)
+        .groupby("年份", as_index=False)
+        .size()
+        .rename(columns={"size": "作品数"})
+        .tail(50)
+    )
+    left.subheader("年代分布")
+    left.caption("最近 50 个有数据年份的作品数量")
+    left.bar_chart(yearly, x="年份", y="作品数", width="stretch", height=340)
 
-        tag_counter = Counter(
-            tag for value in df_filtered.get(TAGS, pd.Series(dtype=str)) for tag in _tag_tokens(value)
-        )
-        tag_data = pd.DataFrame(tag_counter.most_common(12), columns=["标签", "作品数"])
-        right.caption("当前结果中的热门标签")
-        if tag_data.empty:
-            right.info("当前数据没有标签信息。")
-        else:
-            right.bar_chart(tag_data, x="标签", y="作品数", width="stretch", height=300)
+    tag_counter = Counter(
+        tag for value in df_filtered.get(TAGS, pd.Series(dtype=str)) for tag in _tag_tokens(value)
+    )
+    tag_data = pd.DataFrame(tag_counter.most_common(12), columns=["标签", "作品数"])
+    right.subheader("标签热度")
+    right.caption("当前结果中出现最多的 12 个标签")
+    if tag_data.empty:
+        right.info("当前数据没有标签信息。")
+    else:
+        right.bar_chart(tag_data, x="标签", y="作品数", width="stretch", height=340)
 
 
 def render_table(
