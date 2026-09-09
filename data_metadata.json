@@ -4,7 +4,9 @@
   "archive_url": "https://github.com/bangumi/Archive/releases/download/archive/dump-2026-09-08.210336Z.zip",
   "archive_created_at": "2026-09-08T21:03:37Z",
   "archive_updated_at": "2026-09-08T21:03:53Z",
-  "generated_at": "2026-09-09T05:02:03.863859+00:00",
-  "anime_records": 10171,
-  "game_records": 10610
+  "pipeline_version": 2,
+  "generated_at": "2026-09-09T15:42:46.905941+00:00",
+  "anime_records": 10298,
+  "game_records": 10728,
+  "quality_report": "data_quality_report.json"
 }

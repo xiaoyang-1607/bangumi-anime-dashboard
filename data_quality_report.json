@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "pipeline_version": 2,
+  "source_file": "subject.jsonlines",
+  "as_of_date": "2026-09-08",
+  "generated_at": "2026-09-09T15:42:33.691360+00:00",
+  "counts": {
+    "input_lines": 683809,
+    "invalid_json": 0,
+    "non_object_json": 0,
+    "unsupported_type": 540174,
+    "supported_type": 143635,
+    "invalid_id": 0,
+    "missing_name": 0,
+    "invalid_date": 0,
+    "invalid_score_details": 0,
+    "invalid_score": 0,
+    "invalid_rank": 0,
+    "invalid_favorite": 0,
+    "invalid_nsfw": 0,
+    "duplicate_id": 0,
+    "normalized": 143635,
+    "no_ratings": 66045,
+    "unranked": 56564,
+    "ranked_unknown_date": 245,
+    "ranked_upcoming": 5,
+    "ranked_nsfw": 5688,
+    "ranked_without_meta_tags": 150
+  },
+  "warnings": {
+    "score_distribution_mismatch": 0,
+    "favorite_defaulted": 0
+  },
+  "output": {
+    "anime_records": 10298,
+    "game_records": 10728,
+    "total_records": 21026
+  }
+}
