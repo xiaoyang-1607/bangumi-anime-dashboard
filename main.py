@@ -39,10 +39,12 @@ REQUIRED_COLUMNS = {
     "user_tags", "score", "score_total", "rank", "favorite",
     "favorite_wish", "favorite_done", "favorite_doing", "favorite_on_hold",
     "favorite_dropped", "nsfw",
-    "bayesian_score", "score_confidence",
+    "bayesian_score", "score_confidence", "previous_rank", "rank_change",
+    "rank_change_status",
 }
 VALID_RELEASE_STATUSES = {"released", "upcoming", "unknown_date"}
 VALID_SCORE_CONFIDENCE = {"low", "medium", "high"}
+VALID_RANK_CHANGE_STATUSES = {"baseline", "new", "up", "down", "same"}
 
 
 def _parse_cli_date(value: str) -> date:
@@ -109,6 +111,22 @@ def validate_dataframe(data: pd.DataFrame, source_name: str) -> None:
         raise ValueError(f"{source_name} 存在空名称")
     if data["rank"].isna().any() or (data["rank"] <= 0).any():
         raise ValueError(f"{source_name} 存在无效榜单排名")
+    if not data["rank_change_status"].isin(VALID_RANK_CHANGE_STATUSES).all():
+        raise ValueError(f"{source_name} 存在无效名次变动状态")
+    previous_rank = pd.to_numeric(data["previous_rank"], errors="coerce")
+    rank_change = pd.to_numeric(data["rank_change"], errors="coerce")
+    compared = data["rank_change_status"].isin(["up", "down", "same"])
+    if (previous_rank[compared].isna().any() or rank_change[compared].isna().any()
+            or previous_rank[~compared].notna().any() or rank_change[~compared].notna().any()):
+        raise ValueError(f"{source_name} 的名次变动字段不完整")
+    if not rank_change[compared].eq(previous_rank[compared] - data.loc[compared, "rank"]).all():
+        raise ValueError(f"{source_name} 的名次变动数值不一致")
+    if not (
+        (rank_change[data["rank_change_status"] == "up"] > 0).all()
+        and (rank_change[data["rank_change_status"] == "down"] < 0).all()
+        and (rank_change[data["rank_change_status"] == "same"] == 0).all()
+    ):
+        raise ValueError(f"{source_name} 的名次变动方向不一致")
     if data["score"].isna().any() or not data["score"].between(0.01, 10).all():
         raise ValueError(f"{source_name} 存在无效评分")
     if data["score_total"].isna().any() or (data["score_total"] <= 0).any():
@@ -209,6 +227,9 @@ def generate_files(
     *,
     also_save_to_dump: bool = False,
     as_of_date: date | None = None,
+    previous_rankings: dict[int, dict[int, int]] | None = None,
+    previous_movements: dict[int, dict[int, dict]] | None = None,
+    comparison_archive: str | None = None,
 ) -> list[Path]:
     dump_dir = dump_dir.expanduser().resolve()
     output_dir = output_dir.expanduser().resolve()
@@ -218,7 +239,12 @@ def generate_files(
 
     print(f"读取归档：{jsonl_path}")
     anime_data, game_data, quality_report = process_subject_data(
-        jsonl_path, as_of_date=as_of_date, return_report=True
+        jsonl_path,
+        as_of_date=as_of_date,
+        return_report=True,
+        previous_rankings=previous_rankings,
+        previous_movements=previous_movements,
+        comparison_archive=comparison_archive,
     )
     if anime_data is None or game_data is None or quality_report is None:
         raise RuntimeError("归档读取失败")

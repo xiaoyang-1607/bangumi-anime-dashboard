@@ -12,6 +12,7 @@ from ranking_ui import (
     apply_quick_preset,
     available_tags,
     filter_dataframe,
+    format_rank_change,
     load_from_dataframe,
     month_range_bounds,
 )
@@ -73,6 +74,13 @@ class RankingDataTests(unittest.TestCase):
         self.assertEqual(self.data.loc[1, NAME_CN], "Beta")
         self.assertEqual(self.data.loc[0, "Bangumi链接"], "https://bgm.tv/subject/1")
         self.assertFalse(self.data.loc[3, NSFW])
+
+    def test_rank_change_display_is_unambiguous(self):
+        self.assertEqual(format_rank_change(12, "up"), "↑ +12")
+        self.assertEqual(format_rank_change(-5, "down"), "↓ -5")
+        self.assertEqual(format_rank_change(0, "same"), "— 0")
+        self.assertEqual(format_rank_change(None, "new"), "本期新增")
+        self.assertEqual(format_rank_change(None, "baseline"), "暂无对比")
 
     def test_missing_required_column_has_clear_error(self):
         with self.assertRaisesRegex(ValueError, "score_total"):

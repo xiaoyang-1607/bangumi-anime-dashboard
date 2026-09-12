@@ -6,7 +6,7 @@ import pandas as pd
 import streamlit as st
 
 from config import ANIME_PARQUET_FILE, BANGUMI_APP_DATA_DIR, GAME_PARQUET_FILE
-from ranking_ui import LINK, NAME_CN, RANK, SCORE, SCORE_TOTAL, load_from_path
+from ranking_ui import BAYESIAN_SCORE, LINK, NAME_CN, NSFW, RANK, SCORE, SCORE_TOTAL, load_from_path
 from ui import format_archive_date, load_data_metadata, render_sidebar_brand
 
 
@@ -64,26 +64,32 @@ if available:
         )
 
     st.divider()
-    st.subheader("口碑与热度兼具")
-    st.caption(f"至少 1,000 人评分 · 累计 {total_votes:,} 次评分参与计算")
+    st.subheader("值得关注的高分作品")
+    st.caption(f"按动态经验贝叶斯分排序 · 至少 1,000 人评分 · 全站累计 {total_votes:,} 次评分")
     candidates = []
     for category, data in available.items():
         qualified = data[data[SCORE_TOTAL] >= 1_000].copy()
+        if NSFW in qualified.columns:
+            qualified = qualified[~qualified[NSFW]].copy()
         qualified["类型"] = category
-        qualified["口碑指数"] = qualified[SCORE] * (
-            1 + qualified[SCORE_TOTAL].map(lambda value: min(value, 50_000) / 50_000)
-        )
         candidates.append(qualified)
+    score_column = BAYESIAN_SCORE if all(
+        BAYESIAN_SCORE in data.columns for data in candidates
+    ) else SCORE
     highlights = (
         pd.concat(candidates, ignore_index=True)
-        .sort_values(["口碑指数", SCORE_TOTAL], ascending=False)
+        .sort_values([score_column, SCORE_TOTAL], ascending=False)
         .head(12)
     )
     st.dataframe(
-        highlights[["类型", RANK, NAME_CN, SCORE, SCORE_TOTAL, LINK]],
+        highlights[[
+            column for column in ("类型", RANK, NAME_CN, SCORE, BAYESIAN_SCORE, SCORE_TOTAL, LINK)
+            if column in highlights.columns
+        ]],
         column_config={
             LINK: st.column_config.LinkColumn("详情", display_text="打开 ↗"),
             SCORE: st.column_config.NumberColumn(SCORE, format="%.1f"),
+            BAYESIAN_SCORE: st.column_config.NumberColumn(BAYESIAN_SCORE, format="%.2f"),
             SCORE_TOTAL: st.column_config.NumberColumn(SCORE_TOTAL, format="%d"),
         },
         hide_index=True,

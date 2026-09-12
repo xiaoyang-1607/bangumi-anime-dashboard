@@ -1,4 +1,4 @@
-"""Bangumi Archive 的标准化、榜单准入、质量报告与 Excel 导出工具。"""
+"""Bangumi Archive 的标准化、榜单准入、质量报告与 Parquet/Excel 导出工具。"""
 
 from __future__ import annotations
 
@@ -17,9 +17,8 @@ TYPE_ANIME = 2
 TYPE_GAME = 4
 DATE_COLUMN_NAME = "date"
 EXCEL_DATE_FORMAT = "yyyy-mm-dd"
-QUALITY_REPORT_SCHEMA_VERSION = 1
-PIPELINE_VERSION = 2
-BAYESIAN_PRIOR_VOTES = 250
+QUALITY_REPORT_SCHEMA_VERSION = 2
+PIPELINE_VERSION = 3
 MIN_USER_TAG_COUNT = 3
 MAX_USER_TAGS = 20
 
@@ -107,12 +106,13 @@ def _user_tags(values: Any) -> list[str]:
     return [tag for tag, _ in ordered[:MAX_USER_TAGS]]
 
 
-def _score_distribution(value: Any) -> tuple[int, float | None] | None:
-    """返回评分人数和分布均值；结构损坏时返回 None。"""
+def _score_distribution(value: Any) -> tuple[int, float | None, float | None] | None:
+    """返回评分人数、均值和样本方差；结构损坏时返回 None。"""
     if not isinstance(value, dict):
         return None
     total = 0
     weighted = 0
+    weighted_square = 0
     for raw_rating, raw_count in value.items():
         rating = _as_int(raw_rating)
         count = _as_int(raw_count, minimum=0)
@@ -120,7 +120,12 @@ def _score_distribution(value: Any) -> tuple[int, float | None] | None:
             return None
         total += count
         weighted += rating * count
-    return total, (weighted / total if total else None)
+        weighted_square += rating * rating * count
+    if total == 0:
+        return 0, None, None
+    mean = weighted / total
+    variance = max(0.0, (weighted_square - total * mean * mean) / (total - 1)) if total > 1 else None
+    return total, mean, variance
 
 
 def _favorite_counts(value: Any) -> tuple[dict[str, int], bool] | None:
@@ -182,7 +187,7 @@ def _normalize_subject(
     distribution = _score_distribution(subject.get("score_details"))
     if distribution is None:
         return None, "invalid_score_details", warnings
-    score_total, distribution_mean = distribution
+    score_total, distribution_mean, distribution_variance = distribution
     raw_score = subject.get("score")
     if isinstance(raw_score, bool):
         return None, "invalid_score", warnings
@@ -221,6 +226,7 @@ def _normalize_subject(
         "user_tags": ", ".join(_user_tags(subject.get("tags"))),
         "score": score,
         "score_total": score_total,
+        "_rating_variance": distribution_variance,
         "rank": rank,
         "favorite": sum(favorite_counts.values()),
         **{
@@ -242,20 +248,84 @@ def _ranking_exclusion(record: dict[str, Any]) -> str | None:
     return None
 
 
-def _add_derived_scores(records: list[dict[str, Any]]) -> None:
+def _add_derived_scores(records: list[dict[str, Any]]) -> dict[str, float | int | None]:
+    """用类别内矩估计正态层级模型参数，再计算后验均值。"""
     if not records:
-        return
-    global_mean = sum(record["score"] for record in records) / len(records)
+        return {"prior_mean": None, "within_variance": None, "between_variance": None,
+                "equivalent_prior_votes": None, "subjects": 0}
+    subject_count = len(records)
+    global_mean = sum(record["score"] for record in records) / subject_count
+    variance_numerator = sum(
+        (record["score"] - global_mean) ** 2 for record in records
+    )
+    observed_variance = variance_numerator / (subject_count - 1) if subject_count > 1 else 0.0
+    pooled_variance_numerator = sum(
+        (record["score_total"] - 1) * record["_rating_variance"]
+        for record in records
+        if record["score_total"] > 1 and record["_rating_variance"] is not None
+    )
+    pooled_degrees = sum(
+        record["score_total"] - 1 for record in records if record["score_total"] > 1
+    )
+    within_variance = pooled_variance_numerator / pooled_degrees if pooled_degrees else 0.0
+    average_sampling_variance = within_variance * sum(
+        1 / record["score_total"] for record in records
+    ) / subject_count
+    between_variance = max(0.0, observed_variance - average_sampling_variance)
+
     for record in records:
         votes = record["score_total"]
+        sampling_variance = within_variance / votes
+        total_variance = between_variance + sampling_variance
+        weight = between_variance / total_variance if total_variance else 0.0
         record["bayesian_score"] = round(
-            (votes * record["score"] + BAYESIAN_PRIOR_VOTES * global_mean)
-            / (votes + BAYESIAN_PRIOR_VOTES),
+            global_mean + weight * (record["score"] - global_mean),
             3,
         )
         record["score_confidence"] = (
             "high" if votes >= 1_000 else "medium" if votes >= 100 else "low"
         )
+        record.pop("_rating_variance")
+    return {
+        "prior_mean": round(global_mean, 6),
+        "within_variance": round(within_variance, 6),
+        "between_variance": round(between_variance, 6),
+        "equivalent_prior_votes": (
+            round(within_variance / between_variance, 3) if between_variance else None
+        ),
+        "subjects": subject_count,
+    }
+
+
+def _add_rank_movement(
+    records: list[dict[str, Any]],
+    previous_ranks: dict[int, int] | None,
+    previous_movement: dict[int, dict[str, Any]] | None,
+) -> Counter[str]:
+    movements: Counter[str] = Counter()
+    for record in records:
+        subject_id = record["id"]
+        if previous_movement is not None and subject_id in previous_movement:
+            prior = previous_movement[subject_id]
+            record["previous_rank"] = prior.get("previous_rank")
+            record["rank_change"] = prior.get("rank_change")
+            record["rank_change_status"] = prior.get("rank_change_status", "baseline")
+        elif previous_ranks is None:
+            record.update(previous_rank=None, rank_change=None, rank_change_status="baseline")
+        else:
+            previous_rank = previous_ranks.get(subject_id)
+            if previous_rank is None:
+                record.update(previous_rank=None, rank_change=None, rank_change_status="new")
+            else:
+                change = previous_rank - record["rank"]
+                status = "up" if change > 0 else "down" if change < 0 else "same"
+                record.update(
+                    previous_rank=previous_rank,
+                    rank_change=change,
+                    rank_change_status=status,
+                )
+        movements[record["rank_change_status"]] += 1
+    return movements
 
 
 def process_subject_data(
@@ -263,6 +333,9 @@ def process_subject_data(
     *,
     as_of_date: date | None = None,
     return_report: bool = False,
+    previous_rankings: dict[int, dict[int, int]] | None = None,
+    previous_movements: dict[int, dict[int, dict[str, Any]]] | None = None,
+    comparison_archive: str | None = None,
 ):
     """流式标准化归档，派生动画/游戏榜单，并可返回质量报告。"""
     path = Path(jsonl_path)
@@ -323,8 +396,15 @@ def process_subject_data(
         print(f"[ERROR] 无法读取归档：{exc}")
         return (None, None, None) if return_report else (None, None)
 
-    for records in (anime_records, game_records):
-        _add_derived_scores(records)
+    score_models = {}
+    movement_counts: Counter[str] = Counter()
+    for category, records in ((TYPE_ANIME, anime_records), (TYPE_GAME, game_records)):
+        score_models["anime" if category == TYPE_ANIME else "game"] = _add_derived_scores(records)
+        movement_counts.update(_add_rank_movement(
+            records,
+            previous_rankings.get(category) if previous_rankings else None,
+            previous_movements.get(category) if previous_movements else None,
+        ))
         records.sort(key=lambda record: (record["rank"], record["id"]))
 
     count_keys = (
@@ -346,11 +426,16 @@ def process_subject_data(
         "pipeline_version": PIPELINE_VERSION,
         "source_file": path.name,
         "as_of_date": reference_date.isoformat(),
+        "comparison_archive": comparison_archive,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "counts": {key: counters[key] for key in count_keys},
         "warnings": {
             key: warning_counts[key]
             for key in ("score_distribution_mismatch", "favorite_defaulted")
+        },
+        "score_model": score_models,
+        "rank_movement": {
+            key: movement_counts[key] for key in ("up", "down", "same", "new", "baseline")
         },
         "output": {
             "anime_records": len(anime_records),

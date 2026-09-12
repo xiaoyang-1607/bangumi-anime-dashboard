@@ -45,6 +45,14 @@ class StreamlitUiSmokeTests(unittest.TestCase):
         app.run(timeout=60)
         self.assertEqual(int(app.metric[1].value.replace(",", "")), initial_result)
 
+    def test_full_table_view_is_available(self):
+        app = AppTest.from_file(PROJECT_ROOT / "pages/pages1_Anime.py").run(timeout=60)
+        table_control = next(item for item in app.radio if item.label == "显示字段")
+        table_control.set_value("完整数据")
+        app.run(timeout=60)
+        self.assertEqual(list(app.exception), [])
+        self.assertIn("上期排名", app.dataframe[0].value.columns)
+
 
 if __name__ == "__main__":
     unittest.main()

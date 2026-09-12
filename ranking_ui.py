@@ -33,7 +33,10 @@ NSFW = "NSFW"
 RELEASE_STATUS = "发行状态"
 FAVORITE = "收藏人数"
 BAYESIAN_SCORE = "综合评分"
-SCORE_CONFIDENCE = "评分可信度"
+SCORE_CONFIDENCE = "评分样本量"
+RANK_CHANGE = "名次变动"
+RANK_CHANGE_STATUS = "名次状态"
+PREVIOUS_RANK = "上期排名"
 
 _BASE_RENAME = {
     "name": NAME,
@@ -48,6 +51,9 @@ _BASE_RENAME = {
     "favorite": FAVORITE,
     "bayesian_score": BAYESIAN_SCORE,
     "score_confidence": SCORE_CONFIDENCE,
+    "rank_change": RANK_CHANGE,
+    "rank_change_status": RANK_CHANGE_STATUS,
+    "previous_rank": PREVIOUS_RANK,
 }
 
 
@@ -96,6 +102,9 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
         data["favorite"] = pd.to_numeric(data["favorite"], errors="coerce").fillna(0).astype("int64")
     if "bayesian_score" in data.columns:
         data["bayesian_score"] = pd.to_numeric(data["bayesian_score"], errors="coerce")
+    for column in ("rank_change", "previous_rank"):
+        if column in data.columns:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
     if "nsfw" in data.columns:
         data["nsfw"] = data["nsfw"].map(_coerce_boolean)
     if "release_status" in data.columns:
@@ -115,6 +124,7 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     data = data.rename(columns=rename)
     columns = [NAME_CN, NAME, date_display_name, SCORE, SCORE_TOTAL, RANK, LINK]
     for optional_column in (
+        RANK_CHANGE, RANK_CHANGE_STATUS, PREVIOUS_RANK,
         BAYESIAN_SCORE, SCORE_CONFIDENCE, FAVORITE, RELEASE_STATUS,
         NSFW, TAGS, USER_TAGS,
     ):
@@ -364,9 +374,11 @@ def apply_sidebar_filters(
             }
             if BAYESIAN_SCORE in df_original.columns:
                 sort_choices = {
-                    "综合评分 · 可信优先": (BAYESIAN_SCORE, False),
+                    "经验贝叶斯分 · 高分优先": (BAYESIAN_SCORE, False),
                     **sort_choices,
                 }
+            if RANK_CHANGE in df_original.columns and df_original[RANK_CHANGE].notna().any():
+                sort_choices["名次上升 · 最多优先"] = (RANK_CHANGE, False)
             if FAVORITE in df_original.columns:
                 sort_choices["收藏人数 · 人气优先"] = (FAVORITE, False)
             sort_label = st.selectbox(
@@ -460,6 +472,12 @@ def render_overview(
             else "—"
         ),
     )
+    if RANK_CHANGE_STATUS in df_original.columns:
+        comparable = df_original[RANK_CHANGE_STATUS].isin(["up", "down", "same"])
+        if comparable.any():
+            up = int((df_filtered[RANK_CHANGE_STATUS] == "up").sum())
+            down = int((df_filtered[RANK_CHANGE_STATUS] == "down").sum())
+            st.caption(f"当前结果中：↑ {up:,} 条上升 · ↓ {down:,} 条下降 · 名次变动以 Bangumi 原始排名为准")
 
 
 def render_insights(df_filtered: pd.DataFrame, date_column: str) -> None:
@@ -492,6 +510,20 @@ def render_insights(df_filtered: pd.DataFrame, date_column: str) -> None:
         right.bar_chart(tag_data, x="标签", y="作品数", width="stretch", height=340)
 
 
+def format_rank_change(value: object, status: object) -> str:
+    """排名数字越小越靠前，因此正差值代表上升。"""
+    if status == "new":
+        return "本期新增"
+    if status == "baseline":
+        return "暂无对比"
+    if status == "same":
+        return "— 0"
+    if pd.isna(value):
+        return "暂无对比"
+    change = int(value)
+    return f"↑ +{change:,}" if change > 0 else f"↓ {change:,}"
+
+
 def render_table(
     df_sorted: pd.DataFrame,
     date_column: str,
@@ -503,21 +535,40 @@ def render_table(
         st.info("没有符合当前条件的作品，请放宽筛选条件。")
         return
 
-    display_columns = [
-        RANK, NAME_CN, NAME, date_column, RELEASE_STATUS, SCORE,
-        BAYESIAN_SCORE, SCORE_CONFIDENCE, SCORE_TOTAL, FAVORITE,
-        TAGS, USER_TAGS, LINK,
+    compact_columns = [
+        RANK, RANK_CHANGE, NAME_CN, date_column, SCORE, BAYESIAN_SCORE,
+        SCORE_TOTAL, LINK,
+    ]
+    detail_columns = [
+        RANK, RANK_CHANGE, PREVIOUS_RANK, NAME_CN, NAME, date_column,
+        RELEASE_STATUS, SCORE, BAYESIAN_SCORE, SCORE_CONFIDENCE,
+        SCORE_TOTAL, FAVORITE, TAGS, USER_TAGS, LINK,
     ]
     display = df_sorted.copy()
     display[date_column] = display[date_column].dt.strftime("%Y-%m-%d").fillna("未知")
+    table_display = display.copy()
+    if RANK_CHANGE in display.columns and RANK_CHANGE_STATUS in display.columns:
+        table_display[RANK_CHANGE] = [
+            format_rank_change(change, status)
+            for change, status in zip(display[RANK_CHANGE], display[RANK_CHANGE_STATUS])
+        ]
 
     st.subheader(f"筛选结果（{len(display):,} {unit}）")
+    controls = st.columns([2, 1], vertical_alignment="bottom")
+    with controls[0]:
+        table_mode = st.radio(
+            "显示字段", ("精简榜单", "完整数据"), horizontal=True,
+            key=f"{download_name}_table_mode",
+        )
+    with controls[1]:
+        st.caption("↑ 名次上升 · ↓ 名次下降 · 修正分不额外奖励热度")
+    visible_columns = compact_columns if table_mode != "完整数据" else detail_columns
     st.dataframe(
-        display[[column for column in display_columns if column in display.columns]],
+        table_display[[column for column in visible_columns if column in table_display.columns]],
         column_config={
             LINK: st.column_config.LinkColumn("链接", display_text="打开 Bangumi"),
             SCORE: st.column_config.NumberColumn(SCORE, format="%.1f"),
-            BAYESIAN_SCORE: st.column_config.NumberColumn("综合分", format="%.2f"),
+            BAYESIAN_SCORE: st.column_config.NumberColumn("经验贝叶斯分", format="%.2f"),
             SCORE_TOTAL: st.column_config.NumberColumn(SCORE_TOTAL, format="%d"),
             FAVORITE: st.column_config.NumberColumn(FAVORITE, format="%d"),
         },

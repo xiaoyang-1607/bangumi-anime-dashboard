@@ -64,6 +64,8 @@ class PipelineCliTests(unittest.TestCase):
             },
         )
         self.assertEqual(report["output"]["total_records"], 2)
+        self.assertIn("score_model", report)
+        self.assertEqual(report["rank_movement"]["baseline"], 2)
         self.assertEqual(game.loc[0, "release_status"], "unknown_date")
 
 

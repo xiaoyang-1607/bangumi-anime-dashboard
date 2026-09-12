@@ -6,6 +6,8 @@ import unittest
 import pandas as pd
 
 from get_source import (
+    TYPE_ANIME,
+    _add_derived_scores,
     apply_excel_date_format,
     export_to_excel,
     export_to_parquet,
@@ -14,6 +16,26 @@ from get_source import (
 
 
 class ArchiveProcessingTests(unittest.TestCase):
+    def test_empirical_bayes_strength_is_estimated_from_data(self):
+        base = [
+            {"score": 6.0, "score_total": 10, "_rating_variance": 4.0},
+            {"score": 9.0, "score_total": 1000, "_rating_variance": 4.0},
+            {"score": 8.0, "score_total": 100, "_rating_variance": 4.0},
+        ]
+        records = [item.copy() for item in base]
+        model = _add_derived_scores(records)
+        self.assertGreater(model["between_variance"], 0)
+        self.assertNotEqual(model["equivalent_prior_votes"], 250)
+        self.assertGreater(records[0]["bayesian_score"], records[0]["score"])
+        self.assertLess(records[1]["bayesian_score"], records[1]["score"])
+
+        more_diverse = [
+            {**item, "score": score}
+            for item, score in zip(base, (3.0, 9.0, 8.0))
+        ]
+        other_model = _add_derived_scores(more_diverse)
+        self.assertNotEqual(model["equivalent_prior_votes"], other_model["equivalent_prior_votes"])
+
     def test_processes_supported_types_and_skips_bad_rows(self):
         rows = [
             {
@@ -113,6 +135,26 @@ class ArchiveProcessingTests(unittest.TestCase):
         self.assertEqual(report["counts"]["unranked"], 1)
         self.assertEqual(report["counts"]["invalid_date"], 1)
         self.assertEqual(report["counts"]["invalid_json"], 0)
+
+    def test_rank_change_uses_previous_source_rank(self):
+        rows = [
+            {"id": subject_id, "type": 2, "rank": rank, "name": str(subject_id),
+             "score": score, "score_details": {"8": 5}, "date": "2024-01-01"}
+            for subject_id, rank, score in ((1, 10, 8), (2, 20, 8), (3, 30, 8))
+        ]
+        with TemporaryDirectory() as directory:
+            path = Path(directory) / "subject.jsonlines"
+            path.write_text("\n".join(json.dumps(row) for row in rows), encoding="utf-8")
+            anime, _, report = process_subject_data(
+                path, return_report=True,
+                previous_rankings={TYPE_ANIME: {1: 18, 2: 15}},
+                comparison_archive="previous.zip",
+            )
+        by_id = {record["id"]: record for record in anime}
+        self.assertEqual((by_id[1]["rank_change"], by_id[1]["rank_change_status"]), (8, "up"))
+        self.assertEqual((by_id[2]["rank_change"], by_id[2]["rank_change_status"]), (-5, "down"))
+        self.assertEqual(by_id[3]["rank_change_status"], "new")
+        self.assertEqual(report["rank_movement"]["new"], 1)
 
     def test_excel_export_and_date_format_round_trip(self):
         records = [

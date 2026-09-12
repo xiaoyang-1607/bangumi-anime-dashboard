@@ -5,11 +5,13 @@ from __future__ import annotations
 import argparse
 from dataclasses import dataclass
 from datetime import datetime, timezone
+from io import BytesIO
 import json
 import os
 from pathlib import Path, PurePosixPath
 import re
 import shutil
+import subprocess
 import tempfile
 import time
 from typing import Any, Sequence
@@ -29,9 +31,11 @@ from config import (
     GAME_CLEANED_FILE,
     GAME_PARQUET_FILE,
     JSONL_FILE_NAME,
+    PROJECT_ROOT,
 )
-from main import generate_files
-from get_source import PIPELINE_VERSION
+from main import generate_files, validate_data_file
+from get_source import PIPELINE_VERSION, TYPE_ANIME, TYPE_GAME
+from get_source import EXCEL_DATE_FORMAT
 
 
 ARCHIVE_RELEASE_API = "https://api.github.com/repos/bangumi/Archive/releases/latest"
@@ -210,6 +214,151 @@ def validate_record_count_change(
             )
 
 
+def load_rank_comparison(
+    output_dir: Path,
+    current_archive: str,
+    latest_archive: str,
+    previous_comparison_archive: str | None = None,
+) -> tuple[
+    dict[int, dict[int, int]] | None,
+    dict[int, dict[int, dict[str, Any]]] | None,
+    str | None,
+]:
+    """新归档比较原榜单；同归档重新清洗时延续已记录的名次变动。"""
+    paths = {
+        TYPE_ANIME: output_dir / ANIME_PARQUET_FILE,
+        TYPE_GAME: output_dir / GAME_PARQUET_FILE,
+    }
+    if not current_archive or not all(path.is_file() for path in paths.values()):
+        return None, None, None
+    if current_archive == latest_archive:
+        movements = {}
+        for category, path in paths.items():
+            data = pd.read_parquet(path, engine="pyarrow")
+            required = {"id", "previous_rank", "rank_change", "rank_change_status"}
+            if not required.issubset(data.columns):
+                return None, None, None
+            movements[category] = data.set_index("id")[[
+                "previous_rank", "rank_change", "rank_change_status"
+            ]].to_dict("index")
+        return None, movements, previous_comparison_archive
+
+    rankings = {}
+    for category, path in paths.items():
+        data = pd.read_parquet(path, engine="pyarrow", columns=["id", "rank"])
+        rankings[category] = dict(zip(data["id"].astype(int), data["rank"].astype(int)))
+    return rankings, None, current_archive
+
+
+def load_git_rankings(ref: str) -> tuple[dict[int, dict[int, int]], str]:
+    """从已提交的历史榜单获取一次性可复现的名次基线。"""
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", ref):
+        raise ValueError("历史基线必须是 Git 提交哈希")
+
+    def read_object(file_name: str) -> bytes:
+        try:
+            result = subprocess.run(
+                ["git", "show", f"{ref}:{file_name}"],
+                cwd=PROJECT_ROOT,
+                capture_output=True,
+                check=True,
+            )
+        except subprocess.CalledProcessError as exc:
+            raise RuntimeError(f"无法读取历史提交中的 {file_name}") from exc
+        return result.stdout
+
+    metadata = json.loads(read_object(DATA_METADATA_FILE).decode("utf-8"))
+    archive_name = metadata.get("archive_name")
+    if not archive_name:
+        raise ValueError("历史提交缺少归档名称")
+    rankings = {}
+    for category, file_name in (
+        (TYPE_ANIME, ANIME_CLEANED_FILE),
+        (TYPE_GAME, GAME_CLEANED_FILE),
+    ):
+        data = pd.read_excel(BytesIO(read_object(file_name)), usecols=["id", "rank"])
+        if (
+            data.empty
+            or data[["id", "rank"]].isna().any().any()
+            or data["id"].duplicated().any()
+            or (data[["id", "rank"]] <= 0).any().any()
+        ):
+            raise ValueError(f"历史提交中的 {file_name} 不可作为名次基线")
+        rankings[category] = dict(zip(data["id"].astype(int), data["rank"].astype(int)))
+    return rankings, archive_name
+
+
+def add_rank_comparison_columns(data: pd.DataFrame, previous_ranks: dict[int, int]) -> pd.DataFrame:
+    """给当前榜单补充与历史基线的名次差；正数表示名次上升。"""
+    result = data.copy()
+    result["previous_rank"] = result["id"].map(previous_ranks).astype("Int64")
+    result["rank_change"] = (
+        result["previous_rank"] - result["rank"].astype("Int64")
+    ).astype("Int64")
+    result["rank_change_status"] = "new"
+    result.loc[result["rank_change"] > 0, "rank_change_status"] = "up"
+    result.loc[result["rank_change"] < 0, "rank_change_status"] = "down"
+    result.loc[result["rank_change"] == 0, "rank_change_status"] = "same"
+    return result
+
+
+def backfill_rank_changes_from_git(output_dir: Path, ref: str) -> None:
+    """在不重复下载归档的情况下，为现有数据补录上一期名次。"""
+    output_dir = output_dir.expanduser().resolve()
+    metadata_path = output_dir / DATA_METADATA_FILE
+    report_path = output_dir / DATA_QUALITY_REPORT_FILE
+    metadata = read_metadata(metadata_path)
+    if metadata.get("pipeline_version") != PIPELINE_VERSION:
+        raise ValueError("请先用当前清洗流程生成榜单")
+    if metadata.get("comparison_archive"):
+        raise ValueError("当前榜单已经包含历史名次对比，已停止重复回填")
+    previous_rankings, comparison_archive = load_git_rankings(ref)
+    if comparison_archive == metadata.get("archive_name"):
+        raise ValueError("历史基线与当前归档相同，无法计算名次变动")
+    if not report_path.is_file():
+        raise FileNotFoundError(report_path)
+    report = json.loads(report_path.read_text(encoding="utf-8"))
+    movement_counts: dict[str, int] = {key: 0 for key in ("up", "down", "same", "new", "baseline")}
+    staged: list[tuple[Path, Path]] = []
+
+    with tempfile.TemporaryDirectory(prefix=".bangumi-rank-", dir=output_dir) as temp:
+        work_dir = Path(temp)
+        for category, parquet_name, excel_name, sheet_name in (
+            (TYPE_ANIME, ANIME_PARQUET_FILE, ANIME_CLEANED_FILE, "Anime_Subjects"),
+            (TYPE_GAME, GAME_PARQUET_FILE, GAME_CLEANED_FILE, "Game_Subjects"),
+        ):
+            data = pd.read_parquet(output_dir / parquet_name, engine="pyarrow")
+            data = add_rank_comparison_columns(data, previous_rankings[category])
+            for key, count in data["rank_change_status"].value_counts().items():
+                movement_counts[str(key)] += int(count)
+            parquet_path = work_dir / parquet_name
+            excel_path = work_dir / excel_name
+            data.to_parquet(parquet_path, engine="pyarrow", compression="zstd", index=False)
+            with pd.ExcelWriter(
+                excel_path, engine="xlsxwriter", datetime_format=EXCEL_DATE_FORMAT
+            ) as writer:
+                data.to_excel(writer, index=False, sheet_name=sheet_name)
+            for staged_path in (parquet_path, excel_path):
+                validate_data_file(staged_path)
+                staged.append((staged_path, output_dir / staged_path.name))
+
+        report["comparison_archive"] = comparison_archive
+        report["rank_movement"] = movement_counts
+        report["rank_backfilled_at"] = datetime.now(timezone.utc).isoformat()
+        metadata["comparison_archive"] = comparison_archive
+        metadata["rank_baseline_ref"] = ref
+        metadata["rank_backfilled_at"] = report["rank_backfilled_at"]
+        staged_report = work_dir / DATA_QUALITY_REPORT_FILE
+        staged_metadata = work_dir / DATA_METADATA_FILE
+        staged_report.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        staged_metadata.write_text(json.dumps(metadata, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+        for source, destination in staged:
+            source.replace(destination)
+        staged_report.replace(report_path)
+        staged_metadata.replace(metadata_path)
+    print(f"[OK] 已按 {comparison_archive} 回填名次变动")
+
+
 def update_latest_data(
     output_dir: Path,
     *,
@@ -248,8 +397,19 @@ def update_latest_data(
         staged_output = work_dir / "output"
         download_asset(latest, archive_path, token)
         extract_subject_jsonl(archive_path, dump_dir / JSONL_FILE_NAME)
+        previous_rankings, previous_movements, comparison_archive = load_rank_comparison(
+            output_dir,
+            str(current.get("archive_name") or ""),
+            latest.name,
+            current.get("comparison_archive"),
+        )
         generated = generate_files(
-            dump_dir, staged_output, as_of_date=latest.timestamp.date()
+            dump_dir,
+            staged_output,
+            as_of_date=latest.timestamp.date(),
+            previous_rankings=previous_rankings,
+            previous_movements=previous_movements,
+            comparison_archive=comparison_archive,
         )
         generated_by_name = {path.name: path for path in generated}
         new_counts = {
@@ -273,6 +433,7 @@ def update_latest_data(
         "archive_url": latest.url,
         "archive_created_at": latest.created_at,
         "archive_updated_at": latest.updated_at,
+        "comparison_archive": comparison_archive,
         "pipeline_version": PIPELINE_VERSION,
         "generated_at": datetime.now(timezone.utc).isoformat(),
         "anime_records": _record_count(output_dir / ANIME_PARQUET_FILE),
@@ -297,7 +458,13 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--output-dir", type=Path, default=BANGUMI_APP_DATA_DIR, help="数据输出目录"
     )
-    parser.add_argument("--force", action="store_true", help="即使归档未变化也重新生成")
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument("--force", action="store_true", help="即使归档未变化也重新生成")
+    mode.add_argument(
+        "--backfill-ranks-from-git",
+        metavar="COMMIT",
+        help="从指定历史 Git 提交回填名次变动，不下载归档",
+    )
     parser.add_argument(
         "--api-url", default=ARCHIVE_RELEASE_API, help="用于测试或镜像的 release API"
     )
@@ -307,13 +474,16 @@ def build_parser() -> argparse.ArgumentParser:
 def run(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     try:
-        update_latest_data(
-            args.output_dir,
-            force=args.force,
-            api_url=args.api_url,
-            token=os.environ.get("GITHUB_TOKEN"),
-        )
-    except (RuntimeError, OSError, ValueError) as exc:
+        if args.backfill_ranks_from_git:
+            backfill_rank_changes_from_git(args.output_dir, args.backfill_ranks_from_git)
+        else:
+            update_latest_data(
+                args.output_dir,
+                force=args.force,
+                api_url=args.api_url,
+                token=os.environ.get("GITHUB_TOKEN"),
+            )
+    except (RuntimeError, OSError, ValueError, FileNotFoundError, json.JSONDecodeError) as exc:
         print(f"[ERROR] {exc}")
         return 1
     return 0

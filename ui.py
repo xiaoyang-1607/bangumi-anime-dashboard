@@ -34,6 +34,9 @@ def configure_app() -> None:
         [data-testid="stMetric"] { background:#fff; border:1px solid #f0e5e8; border-radius:16px; padding:1rem 1.1rem; box-shadow:0 8px 24px rgba(64,38,48,.045); }
         [data-testid="stMetricLabel"] { color:var(--bgm-muted); }
         [data-testid="stDataFrame"] { border:1px solid #efe5e8; border-radius:14px; overflow:hidden; }
+        [data-testid="stSegmentedControl"] { margin:.1rem 0 .55rem; }
+        [data-testid="stSidebar"] [data-testid="stExpander"] { border-radius:12px; }
+        @media (min-width:1200px) { .block-container { max-width:1500px; padding-top:2rem; } }
         .bgm-hero { padding:2rem 2.2rem; border-radius:24px; margin:.4rem 0 1.4rem; color:white; background:linear-gradient(125deg,#3c303a 0%,#8f5365 55%,#ef7891 100%); box-shadow:0 18px 45px rgba(106,54,72,.18); }
         .bgm-eyebrow { font-size:.76rem; letter-spacing:.14em; text-transform:uppercase; opacity:.75; font-weight:700; }
         .bgm-hero h1 { margin:.35rem 0 .45rem; font-size:clamp(1.8rem,4vw,3.1rem); line-height:1.12; color:white; }
@@ -45,7 +48,7 @@ def configure_app() -> None:
         .bgm-side-brand { padding:.2rem 0 1rem; }
         .bgm-side-brand strong { display:block; font-size:1.05rem; color:var(--bgm-ink); }
         .bgm-side-brand span { color:var(--bgm-muted); font-size:.8rem; }
-        @media (max-width:700px) { .bgm-hero { padding:1.45rem; border-radius:18px; } .bgm-page-title { font-size:1.75rem; } }
+        @media (max-width:700px) { .bgm-hero { padding:1.45rem; border-radius:18px; } .bgm-page-title { font-size:1.75rem; } .block-container { padding-left:1rem; padding-right:1rem; } }
         </style>
         """
     )
