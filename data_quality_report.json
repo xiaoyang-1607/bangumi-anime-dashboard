@@ -1,9 +1,10 @@
 {
-  "schema_version": 1,
-  "pipeline_version": 2,
+  "schema_version": 2,
+  "pipeline_version": 3,
   "source_file": "subject.jsonlines",
   "as_of_date": "2026-09-08",
-  "generated_at": "2026-09-09T15:42:33.691360+00:00",
+  "comparison_archive": "dump-2026-09-01.210329Z.zip",
+  "generated_at": "2026-09-12T11:19:01.183823+00:00",
   "counts": {
     "input_lines": 683809,
     "invalid_json": 0,
@@ -30,6 +31,29 @@
   "warnings": {
     "score_distribution_mismatch": 0,
     "favorite_defaulted": 0
+  },
+  "score_model": {
+    "anime": {
+      "prior_mean": 6.335405,
+      "within_variance": 1.47329,
+      "between_variance": 0.92576,
+      "equivalent_prior_votes": 1.591,
+      "subjects": 10298
+    },
+    "game": {
+      "prior_mean": 6.557159,
+      "within_variance": 1.556187,
+      "between_variance": 0.853972,
+      "equivalent_prior_votes": 1.822,
+      "subjects": 10728
+    }
+  },
+  "rank_movement": {
+    "up": 4480,
+    "down": 14830,
+    "same": 1430,
+    "new": 286,
+    "baseline": 0
   },
   "output": {
     "anime_records": 10298,
