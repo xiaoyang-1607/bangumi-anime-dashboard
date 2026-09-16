@@ -2,15 +2,15 @@
   "schema_version": 2,
   "pipeline_version": 3,
   "source_file": "subject.jsonlines",
-  "as_of_date": "2026-09-08",
-  "comparison_archive": "dump-2026-09-01.210329Z.zip",
-  "generated_at": "2026-09-12T11:19:01.183823+00:00",
+  "as_of_date": "2026-09-15",
+  "comparison_archive": "dump-2026-09-08.210336Z.zip",
+  "generated_at": "2026-09-16T05:05:58.878350+00:00",
   "counts": {
-    "input_lines": 683809,
+    "input_lines": 685252,
     "invalid_json": 0,
     "non_object_json": 0,
-    "unsupported_type": 540174,
-    "supported_type": 143635,
+    "unsupported_type": 541293,
+    "supported_type": 143959,
     "invalid_id": 0,
     "missing_name": 0,
     "invalid_date": 0,
@@ -20,13 +20,13 @@
     "invalid_favorite": 0,
     "invalid_nsfw": 0,
     "duplicate_id": 0,
-    "normalized": 143635,
-    "no_ratings": 66045,
-    "unranked": 56564,
+    "normalized": 143959,
+    "no_ratings": 66164,
+    "unranked": 56750,
     "ranked_unknown_date": 245,
-    "ranked_upcoming": 5,
-    "ranked_nsfw": 5688,
-    "ranked_without_meta_tags": 150
+    "ranked_upcoming": 3,
+    "ranked_nsfw": 5699,
+    "ranked_without_meta_tags": 151
   },
   "warnings": {
     "score_distribution_mismatch": 0,
@@ -34,30 +34,30 @@
   },
   "score_model": {
     "anime": {
-      "prior_mean": 6.335405,
-      "within_variance": 1.47329,
-      "between_variance": 0.92576,
-      "equivalent_prior_votes": 1.591,
-      "subjects": 10298
+      "prior_mean": 6.334861,
+      "within_variance": 1.473083,
+      "between_variance": 0.926222,
+      "equivalent_prior_votes": 1.59,
+      "subjects": 10301
     },
     "game": {
-      "prior_mean": 6.557159,
-      "within_variance": 1.556187,
-      "between_variance": 0.853972,
+      "prior_mean": 6.556785,
+      "within_variance": 1.556311,
+      "between_variance": 0.854058,
       "equivalent_prior_votes": 1.822,
-      "subjects": 10728
+      "subjects": 10744
     }
   },
   "rank_movement": {
-    "up": 4480,
-    "down": 14830,
-    "same": 1430,
-    "new": 286,
+    "up": 7318,
+    "down": 12045,
+    "same": 1658,
+    "new": 24,
     "baseline": 0
   },
   "output": {
-    "anime_records": 10298,
-    "game_records": 10728,
-    "total_records": 21026
+    "anime_records": 10301,
+    "game_records": 10744,
+    "total_records": 21045
   }
 }
