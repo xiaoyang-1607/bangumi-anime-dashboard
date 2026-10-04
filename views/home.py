@@ -6,7 +6,10 @@ import pandas as pd
 import streamlit as st
 
 from config import ANIME_PARQUET_FILE, BANGUMI_APP_DATA_DIR, GAME_PARQUET_FILE
-from ranking_ui import BAYESIAN_SCORE, LINK, NAME_CN, NSFW, RANK, SCORE, SCORE_TOTAL, load_from_path
+from ranking_ui import (
+    BAYESIAN_SCORE, LINK, NAME_CN, NSFW, RANK, SCORE, SCORE_TOTAL,
+    WEIGHTED_RANK, WEIGHTED_SCORE, load_from_path,
+)
 from ui import format_archive_date, load_data_metadata, render_sidebar_brand
 
 
@@ -64,8 +67,8 @@ if available:
         )
 
     st.divider()
-    st.subheader("值得关注的高分作品")
-    st.caption(f"按动态经验贝叶斯分排序 · 至少 1,000 人评分 · 全站累计 {total_votes:,} 次评分")
+    st.subheader("质量与热度综合榜")
+    st.caption(f"按动态加权得分排序 · 至少 1,000 人评分 · 全站累计 {total_votes:,} 次评分")
     candidates = []
     for category, data in available.items():
         qualified = data[data[SCORE_TOTAL] >= 1_000].copy()
@@ -73,9 +76,13 @@ if available:
             qualified = qualified[~qualified[NSFW]].copy()
         qualified["类型"] = category
         candidates.append(qualified)
-    score_column = BAYESIAN_SCORE if all(
-        BAYESIAN_SCORE in data.columns for data in candidates
-    ) else SCORE
+    score_column = WEIGHTED_SCORE if all(
+        WEIGHTED_SCORE in data.columns for data in candidates
+    ) else (
+        BAYESIAN_SCORE
+        if all(BAYESIAN_SCORE in data.columns for data in candidates)
+        else SCORE
+    )
     highlights = (
         pd.concat(candidates, ignore_index=True)
         .sort_values([score_column, SCORE_TOTAL], ascending=False)
@@ -83,13 +90,17 @@ if available:
     )
     st.dataframe(
         highlights[[
-            column for column in ("类型", RANK, NAME_CN, SCORE, BAYESIAN_SCORE, SCORE_TOTAL, LINK)
+            column for column in (
+                "类型", WEIGHTED_RANK, RANK, NAME_CN, SCORE,
+                WEIGHTED_SCORE, BAYESIAN_SCORE, SCORE_TOTAL, LINK,
+            )
             if column in highlights.columns
         ]],
         column_config={
             LINK: st.column_config.LinkColumn("详情", display_text="打开 ↗"),
             SCORE: st.column_config.NumberColumn(SCORE, format="%.1f"),
-            BAYESIAN_SCORE: st.column_config.NumberColumn(BAYESIAN_SCORE, format="%.2f"),
+            WEIGHTED_SCORE: st.column_config.NumberColumn(WEIGHTED_SCORE, format="%.4f"),
+            BAYESIAN_SCORE: st.column_config.NumberColumn(BAYESIAN_SCORE, format="%.3f"),
             SCORE_TOTAL: st.column_config.NumberColumn(SCORE_TOTAL, format="%d"),
         },
         hide_index=True,

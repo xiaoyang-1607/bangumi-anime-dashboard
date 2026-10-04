@@ -39,7 +39,8 @@ REQUIRED_COLUMNS = {
     "user_tags", "score", "score_total", "rank", "favorite",
     "favorite_wish", "favorite_done", "favorite_doing", "favorite_on_hold",
     "favorite_dropped", "nsfw",
-    "bayesian_score", "score_confidence", "previous_rank", "rank_change",
+    "bayesian_score", "weighted_score", "weighted_rank", "score_confidence",
+    "previous_rank", "rank_change",
     "rank_change_status",
 }
 VALID_RELEASE_STATUSES = {"released", "upcoming", "unknown_date"}
@@ -132,7 +133,20 @@ def validate_dataframe(data: pd.DataFrame, source_name: str) -> None:
     if data["score_total"].isna().any() or (data["score_total"] <= 0).any():
         raise ValueError(f"{source_name} 存在无效评分人数")
     if data["bayesian_score"].isna().any() or not data["bayesian_score"].between(0, 10).all():
-        raise ValueError(f"{source_name} 存在无效综合评分")
+        raise ValueError(f"{source_name} 存在无效贝叶斯修正分")
+    if data["weighted_score"].isna().any() or not data["weighted_score"].between(0, 10).all():
+        raise ValueError(f"{source_name} 存在无效加权得分")
+    weighted_rank = pd.to_numeric(data["weighted_rank"], errors="coerce")
+    if (
+        weighted_rank.isna().any()
+        or not weighted_rank.mod(1).eq(0).all()
+        or not weighted_rank.between(1, len(data)).all()
+        or weighted_rank.duplicated().any()
+    ):
+        raise ValueError(f"{source_name} 存在无效加权排名")
+    weighted_order = data.assign(_weighted_rank=weighted_rank).sort_values("_weighted_rank")
+    if not weighted_order["weighted_score"].is_monotonic_decreasing:
+        raise ValueError(f"{source_name} 的加权得分与加权排名不一致")
     if data["favorite"].isna().any() or (data["favorite"] < 0).any():
         raise ValueError(f"{source_name} 存在无效收藏人数")
     favorite_columns = [

@@ -28,6 +28,9 @@ class StreamlitUiSmokeTests(unittest.TestCase):
                 self.assertEqual(len(app.date_input), 0)
                 self.assertIn("起始月份", [widget.label for widget in app.selectbox])
                 self.assertIn("结束月份", [widget.label for widget in app.selectbox])
+                sort_widget = next(widget for widget in app.selectbox if widget.label == "排序方式")
+                self.assertIn("名次变动 · 上升最多", sort_widget.options)
+                self.assertIn("名次变动 · 下降最多", sort_widget.options)
                 self.assertIn("找到", app.success[0].value)
 
     def test_quick_filter_and_reset_update_result_count(self):

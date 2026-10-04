@@ -17,8 +17,8 @@ TYPE_ANIME = 2
 TYPE_GAME = 4
 DATE_COLUMN_NAME = "date"
 EXCEL_DATE_FORMAT = "yyyy-mm-dd"
-QUALITY_REPORT_SCHEMA_VERSION = 2
-PIPELINE_VERSION = 3
+QUALITY_REPORT_SCHEMA_VERSION = 3
+PIPELINE_VERSION = 4
 MIN_USER_TAG_COUNT = 3
 MAX_USER_TAGS = 20
 
@@ -249,10 +249,12 @@ def _ranking_exclusion(record: dict[str, Any]) -> str | None:
 
 
 def _add_derived_scores(records: list[dict[str, Any]]) -> dict[str, float | int | None]:
-    """用类别内矩估计正态层级模型参数，再计算后验均值。"""
+    """计算经验贝叶斯分，以及同时考虑评分人数的动态加权指数。"""
     if not records:
         return {"prior_mean": None, "within_variance": None, "between_variance": None,
-                "equivalent_prior_votes": None, "subjects": 0}
+                "equivalent_prior_votes": None, "weighting_evidence_min": None,
+                "weighting_evidence_max": None, "weighted_score_unique": 0,
+                "subjects": 0}
     subject_count = len(records)
     global_mean = sum(record["score"] for record in records) / subject_count
     variance_numerator = sum(
@@ -273,19 +275,38 @@ def _add_derived_scores(records: list[dict[str, Any]]) -> dict[str, float | int 
     ) / subject_count
     between_variance = max(0.0, observed_variance - average_sampling_variance)
 
+    evidence_values: list[float] = []
     for record in records:
         votes = record["score_total"]
         sampling_variance = within_variance / votes
         total_variance = between_variance + sampling_variance
         weight = between_variance / total_variance if total_variance else 0.0
-        record["bayesian_score"] = round(
-            global_mean + weight * (record["score"] - global_mean),
-            3,
-        )
+        posterior_score = global_mean + weight * (record["score"] - global_mean)
+        record["bayesian_score"] = round(posterior_score, 4)
+        evidence_values.append(posterior_score * math.log2(votes + 1))
         record["score_confidence"] = (
             "high" if votes >= 1_000 else "medium" if votes >= 100 else "low"
         )
         record.pop("_rating_variance")
+
+    evidence_min = min(evidence_values)
+    evidence_max = max(evidence_values)
+    evidence_span = evidence_max - evidence_min
+    for record, evidence in zip(records, evidence_values):
+        record["weighted_score"] = round(
+            10 * (evidence - evidence_min) / evidence_span if evidence_span else 10.0,
+            4,
+        )
+    ranked_indices = sorted(
+        range(subject_count),
+        key=lambda index: (
+            -evidence_values[index],
+            records[index].get("rank", math.inf),
+            records[index].get("id", index),
+        ),
+    )
+    for weighted_rank, index in enumerate(ranked_indices, start=1):
+        records[index]["weighted_rank"] = weighted_rank
     return {
         "prior_mean": round(global_mean, 6),
         "within_variance": round(within_variance, 6),
@@ -293,6 +314,9 @@ def _add_derived_scores(records: list[dict[str, Any]]) -> dict[str, float | int 
         "equivalent_prior_votes": (
             round(within_variance / between_variance, 3) if between_variance else None
         ),
+        "weighting_evidence_min": round(evidence_min, 6),
+        "weighting_evidence_max": round(evidence_max, 6),
+        "weighted_score_unique": len({record["weighted_score"] for record in records}),
         "subjects": subject_count,
     }
 

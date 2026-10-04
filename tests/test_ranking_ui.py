@@ -7,6 +7,7 @@ from ranking_ui import (
     NAME_CN,
     NSFW,
     RANK,
+    RANK_CHANGE,
     SCORE,
     TAGS,
     apply_quick_preset,
@@ -81,6 +82,20 @@ class RankingDataTests(unittest.TestCase):
         self.assertEqual(format_rank_change(0, "same"), "— 0")
         self.assertEqual(format_rank_change(None, "new"), "本期新增")
         self.assertEqual(format_rank_change(None, "baseline"), "暂无对比")
+
+    def test_rank_change_sorts_as_signed_number(self):
+        data = self.data.copy()
+        data[RANK_CHANGE] = [-8, 15, 0, -2]
+        rising = filter_dataframe(
+            data, date_column="开播日期", sort_by=RANK_CHANGE,
+            ascending=False, nsfw_mode="all", include_unknown_dates=True,
+        )
+        falling = filter_dataframe(
+            data, date_column="开播日期", sort_by=RANK_CHANGE,
+            ascending=True, nsfw_mode="all", include_unknown_dates=True,
+        )
+        self.assertEqual(rising[RANK_CHANGE].tolist(), [15, 0, -2, -8])
+        self.assertEqual(falling[RANK_CHANGE].tolist(), [-8, -2, 0, 15])
 
     def test_missing_required_column_has_clear_error(self):
         with self.assertRaisesRegex(ValueError, "score_total"):

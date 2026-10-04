@@ -32,7 +32,9 @@ USER_TAGS = "用户标签"
 NSFW = "NSFW"
 RELEASE_STATUS = "发行状态"
 FAVORITE = "收藏人数"
-BAYESIAN_SCORE = "综合评分"
+BAYESIAN_SCORE = "贝叶斯修正分"
+WEIGHTED_SCORE = "加权得分"
+WEIGHTED_RANK = "加权排名"
 SCORE_CONFIDENCE = "评分样本量"
 RANK_CHANGE = "名次变动"
 RANK_CHANGE_STATUS = "名次状态"
@@ -50,6 +52,8 @@ _BASE_RENAME = {
     "release_status": RELEASE_STATUS,
     "favorite": FAVORITE,
     "bayesian_score": BAYESIAN_SCORE,
+    "weighted_score": WEIGHTED_SCORE,
+    "weighted_rank": WEIGHTED_RANK,
     "score_confidence": SCORE_CONFIDENCE,
     "rank_change": RANK_CHANGE,
     "rank_change_status": RANK_CHANGE_STATUS,
@@ -100,8 +104,9 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     data["rank"] = data["rank"].astype("int64")
     if "favorite" in data.columns:
         data["favorite"] = pd.to_numeric(data["favorite"], errors="coerce").fillna(0).astype("int64")
-    if "bayesian_score" in data.columns:
-        data["bayesian_score"] = pd.to_numeric(data["bayesian_score"], errors="coerce")
+    for column in ("bayesian_score", "weighted_score", "weighted_rank"):
+        if column in data.columns:
+            data[column] = pd.to_numeric(data[column], errors="coerce")
     for column in ("rank_change", "previous_rank"):
         if column in data.columns:
             data[column] = pd.to_numeric(data[column], errors="coerce")
@@ -125,7 +130,8 @@ def load_from_dataframe(df: pd.DataFrame, date_display_name: str) -> pd.DataFram
     columns = [NAME_CN, NAME, date_display_name, SCORE, SCORE_TOTAL, RANK, LINK]
     for optional_column in (
         RANK_CHANGE, RANK_CHANGE_STATUS, PREVIOUS_RANK,
-        BAYESIAN_SCORE, SCORE_CONFIDENCE, FAVORITE, RELEASE_STATUS,
+        WEIGHTED_SCORE, WEIGHTED_RANK, BAYESIAN_SCORE, SCORE_CONFIDENCE,
+        FAVORITE, RELEASE_STATUS,
         NSFW, TAGS, USER_TAGS,
     ):
         if optional_column in data.columns:
@@ -377,8 +383,14 @@ def apply_sidebar_filters(
                     "经验贝叶斯分 · 高分优先": (BAYESIAN_SCORE, False),
                     **sort_choices,
                 }
+            if WEIGHTED_SCORE in df_original.columns:
+                sort_choices = {
+                    "加权得分 · 高分优先": (WEIGHTED_SCORE, False),
+                    **sort_choices,
+                }
             if RANK_CHANGE in df_original.columns and df_original[RANK_CHANGE].notna().any():
-                sort_choices["名次上升 · 最多优先"] = (RANK_CHANGE, False)
+                sort_choices["名次变动 · 上升最多"] = (RANK_CHANGE, False)
+                sort_choices["名次变动 · 下降最多"] = (RANK_CHANGE, True)
             if FAVORITE in df_original.columns:
                 sort_choices["收藏人数 · 人气优先"] = (FAVORITE, False)
             sort_label = st.selectbox(
@@ -536,22 +548,16 @@ def render_table(
         return
 
     compact_columns = [
-        RANK, RANK_CHANGE, NAME_CN, date_column, SCORE, BAYESIAN_SCORE,
-        SCORE_TOTAL, LINK,
+        WEIGHTED_RANK, RANK, RANK_CHANGE, NAME_CN, date_column, SCORE,
+        WEIGHTED_SCORE, SCORE_TOTAL, LINK,
     ]
     detail_columns = [
-        RANK, RANK_CHANGE, PREVIOUS_RANK, NAME_CN, NAME, date_column,
-        RELEASE_STATUS, SCORE, BAYESIAN_SCORE, SCORE_CONFIDENCE,
+        WEIGHTED_RANK, RANK, RANK_CHANGE, PREVIOUS_RANK, NAME_CN, NAME,
+        date_column, RELEASE_STATUS, SCORE, WEIGHTED_SCORE, BAYESIAN_SCORE, SCORE_CONFIDENCE,
         SCORE_TOTAL, FAVORITE, TAGS, USER_TAGS, LINK,
     ]
     display = df_sorted.copy()
     display[date_column] = display[date_column].dt.strftime("%Y-%m-%d").fillna("未知")
-    table_display = display.copy()
-    if RANK_CHANGE in display.columns and RANK_CHANGE_STATUS in display.columns:
-        table_display[RANK_CHANGE] = [
-            format_rank_change(change, status)
-            for change, status in zip(display[RANK_CHANGE], display[RANK_CHANGE_STATUS])
-        ]
 
     st.subheader(f"筛选结果（{len(display):,} {unit}）")
     controls = st.columns([2, 1], vertical_alignment="bottom")
@@ -561,14 +567,19 @@ def render_table(
             key=f"{download_name}_table_mode",
         )
     with controls[1]:
-        st.caption("↑ 名次上升 · ↓ 名次下降 · 修正分不额外奖励热度")
+        st.caption("名次变动：正数上升、负数下降；空白表示本期新增或暂无基线")
     visible_columns = compact_columns if table_mode != "完整数据" else detail_columns
     st.dataframe(
-        table_display[[column for column in visible_columns if column in table_display.columns]],
+        display[[column for column in visible_columns if column in display.columns]],
         column_config={
             LINK: st.column_config.LinkColumn("链接", display_text="打开 Bangumi"),
             SCORE: st.column_config.NumberColumn(SCORE, format="%.1f"),
-            BAYESIAN_SCORE: st.column_config.NumberColumn("经验贝叶斯分", format="%.2f"),
+            WEIGHTED_SCORE: st.column_config.NumberColumn(WEIGHTED_SCORE, format="%.4f"),
+            BAYESIAN_SCORE: st.column_config.NumberColumn(BAYESIAN_SCORE, format="%.3f"),
+            RANK_CHANGE: st.column_config.NumberColumn(
+                RANK_CHANGE, format="%+d",
+                help="正数表示上升，负数表示下降；点击列头可按数值升降序排列。",
+            ),
             SCORE_TOTAL: st.column_config.NumberColumn(SCORE_TOTAL, format="%d"),
             FAVORITE: st.column_config.NumberColumn(FAVORITE, format="%d"),
         },

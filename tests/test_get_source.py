@@ -28,6 +28,10 @@ class ArchiveProcessingTests(unittest.TestCase):
         self.assertNotEqual(model["equivalent_prior_votes"], 250)
         self.assertGreater(records[0]["bayesian_score"], records[0]["score"])
         self.assertLess(records[1]["bayesian_score"], records[1]["score"])
+        self.assertEqual(sorted(record["weighted_rank"] for record in records), [1, 2, 3])
+        self.assertEqual(max(record["weighted_score"] for record in records), 10.0)
+        self.assertEqual(min(record["weighted_score"] for record in records), 0.0)
+        self.assertEqual(records[1]["weighted_rank"], 1)
 
         more_diverse = [
             {**item, "score": score}
@@ -35,6 +39,16 @@ class ArchiveProcessingTests(unittest.TestCase):
         ]
         other_model = _add_derived_scores(more_diverse)
         self.assertNotEqual(model["equivalent_prior_votes"], other_model["equivalent_prior_votes"])
+
+    def test_weighted_score_uses_vote_evidence_to_break_equal_scores(self):
+        records = [
+            {"id": 1, "rank": 2, "score": 8.0, "score_total": 20, "_rating_variance": 2.0},
+            {"id": 2, "rank": 1, "score": 8.0, "score_total": 2_000, "_rating_variance": 2.0},
+        ]
+        _add_derived_scores(records)
+        by_id = {record["id"]: record for record in records}
+        self.assertGreater(by_id[2]["weighted_score"], by_id[1]["weighted_score"])
+        self.assertEqual(by_id[2]["weighted_rank"], 1)
 
     def test_processes_supported_types_and_skips_bad_rows(self):
         rows = [
