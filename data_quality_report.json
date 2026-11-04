@@ -2,15 +2,15 @@
   "schema_version": 3,
   "pipeline_version": 4,
   "source_file": "subject.jsonlines",
-  "as_of_date": "2026-10-27",
-  "comparison_archive": "dump-2026-10-20.210332Z.zip",
-  "generated_at": "2026-10-28T06:04:20.270172+00:00",
+  "as_of_date": "2026-11-03",
+  "comparison_archive": "dump-2026-10-27.210404Z.zip",
+  "generated_at": "2026-11-04T06:53:53.480128+00:00",
   "counts": {
-    "input_lines": 700108,
+    "input_lines": 701918,
     "invalid_json": 0,
     "non_object_json": 0,
-    "unsupported_type": 550969,
-    "supported_type": 149139,
+    "unsupported_type": 552467,
+    "supported_type": 149451,
     "invalid_id": 0,
     "missing_name": 0,
     "invalid_date": 0,
@@ -20,13 +20,13 @@
     "invalid_favorite": 0,
     "invalid_nsfw": 0,
     "duplicate_id": 0,
-    "normalized": 149139,
-    "no_ratings": 70350,
-    "unranked": 57465,
-    "ranked_unknown_date": 246,
+    "normalized": 149451,
+    "no_ratings": 70505,
+    "unranked": 57576,
+    "ranked_unknown_date": 245,
     "ranked_upcoming": 6,
-    "ranked_nsfw": 5677,
-    "ranked_without_meta_tags": 155
+    "ranked_nsfw": 5701,
+    "ranked_without_meta_tags": 158
   },
   "warnings": {
     "score_distribution_mismatch": 0,
@@ -34,36 +34,36 @@
   },
   "score_model": {
     "anime": {
-      "prior_mean": 6.32794,
-      "within_variance": 1.470375,
-      "between_variance": 0.932176,
-      "equivalent_prior_votes": 1.577,
-      "weighting_evidence_min": 7.799076,
-      "weighting_evidence_max": 137.704236,
-      "weighted_score_unique": 8174,
-      "subjects": 10433
+      "prior_mean": 6.327295,
+      "within_variance": 1.470516,
+      "between_variance": 0.93157,
+      "equivalent_prior_votes": 1.579,
+      "weighting_evidence_min": 7.799574,
+      "weighting_evidence_max": 136.226331,
+      "weighted_score_unique": 8165,
+      "subjects": 10445
     },
     "game": {
-      "prior_mean": 6.549343,
-      "within_variance": 1.560753,
-      "between_variance": 0.855759,
-      "equivalent_prior_votes": 1.824,
-      "weighting_evidence_min": 9.36938,
-      "weighting_evidence_max": 120.879126,
-      "weighted_score_unique": 5464,
-      "subjects": 10891
+      "prior_mean": 6.547451,
+      "within_variance": 1.561766,
+      "between_variance": 0.855993,
+      "equivalent_prior_votes": 1.825,
+      "weighting_evidence_min": 9.369308,
+      "weighting_evidence_max": 120.910681,
+      "weighted_score_unique": 5511,
+      "subjects": 10925
     }
   },
   "rank_movement": {
-    "up": 3875,
-    "down": 16025,
-    "same": 1388,
-    "new": 36,
+    "up": 4250,
+    "down": 15695,
+    "same": 1374,
+    "new": 51,
     "baseline": 0
   },
   "output": {
-    "anime_records": 10433,
-    "game_records": 10891,
-    "total_records": 21324
+    "anime_records": 10445,
+    "game_records": 10925,
+    "total_records": 21370
   }
 }
