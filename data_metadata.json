@@ -1,14 +1,14 @@
 {
-  "archive_asset_id": 707088434,
-  "archive_name": "dump-2026-11-03.210402Z.zip",
-  "archive_url": "https://github.com/bangumi/Archive/releases/download/archive/dump-2026-11-03.210402Z.zip",
-  "archive_created_at": "2026-11-03T21:04:03Z",
-  "archive_updated_at": "2026-11-03T21:04:25Z",
-  "comparison_archive": "dump-2026-10-27.210404Z.zip",
+  "archive_asset_id": 732942198,
+  "archive_name": "dump-2026-11-10.210405Z.zip",
+  "archive_url": "https://github.com/bangumi/Archive/releases/download/archive/dump-2026-11-10.210405Z.zip",
+  "archive_created_at": "2026-11-10T21:04:06Z",
+  "archive_updated_at": "2026-11-10T21:04:27Z",
+  "comparison_archive": "dump-2026-11-03.210402Z.zip",
   "pipeline_version": 4,
-  "generated_at": "2026-11-04T06:54:00.621791+00:00",
-  "anime_records": 10445,
-  "game_records": 10925,
+  "generated_at": "2026-11-11T06:57:52.144985+00:00",
+  "anime_records": 10451,
+  "game_records": 10953,
   "app_data_files": [
     "anime_cleaned.parquet",
     "game_cleaned.parquet"
